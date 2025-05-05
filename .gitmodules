@@ -1,0 +1,3 @@
+[submodule "external/cbs"]
+	path = external/cbs
+	url = https://github.com/trenthuber/cbs
