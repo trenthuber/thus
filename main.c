@@ -5,25 +5,121 @@
 #include <string.h>
 #include <sys/errno.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
-void prompt(int sig) {
-	if (sig == SIGINT) printf("\n");
-	printf("%% ");
-	fflush(stdout);
+struct termios canonical;
+
+void ashexit(void) {
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &canonical) == -1)
+		warn("Unable to return to initial terminal settings");
 }
 
 #define BUFLEN 1024
+#define HISTLEN 1000
+#define PROMPT "% "
+
+enum {
+	CTRLC = '\003',
+	CTRLD,
+	ESCAPE = '\033',
+	UP = 'A',
+	DOWN,
+	RIGHT,
+	LEFT,
+	BACKSPACE = '\177',
+};
+
+char *getinput(void) {
+	static char history[HISTLEN][BUFLEN], result[BUFLEN],
+	            (*hb)[BUFLEN] = history, (*hc)[BUFLEN] = history,
+	            (*ht)[BUFLEN] = history;
+	char *cursor, *end;
+	int c, i;
+
+	fputs(PROMPT, stdout);
+	*result = '\0';
+	for (end = cursor = result; (c = getchar()) != '\n';) {
+		if (c >= ' ' && c <= '~') {
+			if (end - result == BUFLEN - 1) continue;
+			memmove(cursor + 1, cursor, end - cursor);
+			*cursor++ = c;
+			*++end = '\0';
+
+			putchar(c);
+			fputs(cursor, stdout);
+			for (i = end - cursor; i > 0; --i) putchar('\b');
+		} else switch (c) {
+		case CTRLC:
+			puts("^C");
+			return NULL;
+		case CTRLD:
+			puts("^D");
+			exit(EXIT_SUCCESS);
+		case ESCAPE:
+			if ((c = getchar()) != '[') {
+				ungetc(c, stdin);
+				break;
+			}
+			switch ((c = getchar())) {
+			case UP:
+			case DOWN:
+				if (hc == (c == UP ? hb : ht)) continue;
+				if (strcmp(*hc, result) != 0) strcpy(*ht, result);
+
+				putchar('\r');
+				for (i = end - result + strlen(PROMPT); i > 0; --i) putchar(' ');
+				putchar('\r');
+				fputs(PROMPT, stdout);
+
+				hc = history + ((hc - history + (c == UP ? -1 : 1)) % HISTLEN + HISTLEN)
+				     % HISTLEN;
+				strcpy(result, *hc);
+				end = cursor = result + strlen(result);
+
+				fputs(result, stdout);
+				break;
+			case LEFT:
+				if (cursor > result) {
+					putchar('\b');
+					--cursor;
+				}
+				break;
+			case RIGHT:
+				if (cursor < end) putchar(*cursor++);
+				break;
+			}
+			break;
+		case BACKSPACE:
+			if (cursor == result) continue;
+			memmove(cursor - 1, cursor, end - cursor);
+			--cursor;
+			*--end = '\0';
+
+			putchar('\b');
+			fputs(cursor, stdout);
+			putchar(' ');
+			for (i = end - cursor + 1; i > 0; --i) putchar('\b');
+
+			break;
+		}
+	}
+	strcpy(*ht, result);
+	ht = history + (ht - history + 1) % HISTLEN;
+	hc = ht;
+	if (ht == hb) hb = history + (hb - history + 1) % HISTLEN;
+
+	return end > result ? result : NULL;
+}
 
 char **tokenize(char *p) {
 	size_t i;
 	static char *result[BUFLEN / 2];
 
 	while (*p == ' ') ++p;
-	for (i = 0; *p != '\n'; ++i) {
+	for (i = 0; *p; ++i) {
 		result[i] = p;
-		while (*p != ' ' && *p != '\n') ++p;
-		*p++ = '\0';
+		while (*p != ' ' && *p != '\0') ++p;
 		if (*p == '\0') {
 			++i;
 			break;
@@ -38,7 +134,7 @@ char **tokenize(char *p) {
 struct {
 	pid_t pgids[BGMAX];
 	size_t bp, sp;
-} bgps;
+} bgps; // TODO: These are stopped jobs, not background jobs
 
 void pushbgps(pid_t pgid) {
 	if ((bgps.sp + 1) % BGMAX == bgps.bp) killpg(bgps.pgids[bgps.bp++], SIGKILL);
@@ -63,7 +159,7 @@ void await(pid_t cpgid) {
 	if (tcsetpgrp(STDIN_FILENO, self) == -1) exit(EXIT_FAILURE);
 	if (signal(SIGTTOU, SIG_DFL) == SIG_ERR) warn("Ignoring signal SIGTTOU");
 
-	if (WIFSIGNALED(status)) printf("\n");
+	if (WIFSIGNALED(status)) putchar('\n');
 	if (WIFSTOPPED(status)) pushbgps(cpgid);
 }
 
@@ -94,30 +190,31 @@ int builtin(char **tokens) {
 }
 
 int main(void) {
-	char buffer[BUFLEN];
-	char **tokens;
+	char *input, **tokens;
 	pid_t cpgid;
+	struct termios raw;
 
-	signal(SIGINT, prompt);
-	if ((self = getpgid(0)) == -1)
-		err(EXIT_FAILURE, "Unable to get pgid of self");
+	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
+		err(EXIT_FAILURE, "Unable to get termios structure");
+	raw = canonical;
+	raw.c_lflag &= ~ICANON & ~ECHO & ~ISIG;
+	raw.c_lflag |= ECHONL;
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
+		err(EXIT_FAILURE, "Unable to set termios structure");
+	if (atexit(ashexit) == -1)
+		err(EXIT_FAILURE, "Unable to set `atexit()'");
+
+	if ((self = getpgid(0)) == -1) err(EXIT_FAILURE, "Unable to get pgid of self");
 	for (;;) {
-		prompt(0);
-		if (fgets(buffer, BUFLEN, stdin) == NULL) {
-			if (feof(stdin)) {
-				printf("\n");
-				exit(EXIT_SUCCESS);
-			}
-			warn("Unable to read user input");
-			continue;
-		}
-		tokens = tokenize(buffer);
+		if (!(input = getinput())) continue;
+		tokens = tokenize(input);
 
 		if (!*tokens || builtin(tokens)) continue;
 
-		if ((cpgid = fork()) == 0)
-			if (execvp(tokens[0], tokens) == -1)
-				err(EXIT_FAILURE, "Unable to run command `%s'", tokens[0]);
+		if ((cpgid = fork()) == 0 && execvp(tokens[0], tokens) == -1) {
+			warn("Unable to run command `%s'", tokens[0]);
+			_Exit(EXIT_FAILURE);
+		}
 		if (setpgid(cpgid, cpgid) == -1) {
 			warn("Unable to set process group of process %d", cpgid);
 			if (kill(cpgid, SIGKILL) == -1)
@@ -140,5 +237,6 @@ int main(void) {
 		}
 		await(cpgid);
 	}
+
 	return 0;
 }
