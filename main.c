@@ -1,4 +1,5 @@
 #include <err.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,9 +16,81 @@ void ashexit(void) {
 		warn("Unable to return to initial terminal settings");
 }
 
+void *allocate(size_t s) {
+	void *r;
+
+	if (!(r = malloc(s))) err(EXIT_FAILURE, "Memory allocation");
+
+	return memset(r, 0, s);
+}
+
 #define BUFLEN 1024
-#define HISTLEN 1000
+#define HISTLEN 100
 #define PROMPT "% "
+#define HISTNAME ".ashhistory"
+
+char history[HISTLEN][BUFLEN], (*hb)[BUFLEN], (*hc)[BUFLEN], (*ht)[BUFLEN];
+static char *histpath;
+
+static void freehistpath(void) {
+	free(histpath);
+}
+
+void readhist(void) {
+	char *homepath;
+	FILE *histfile;
+	int e;
+
+	if (!(homepath = getenv("HOME")))
+		errx(EXIT_FAILURE, "HOME environment variable does not exist");
+	histpath = allocate(strlen(homepath) + 1 + strlen(HISTNAME) + 1);
+	if (atexit(freehistpath) == -1)
+		err(EXIT_FAILURE, "Unable to add `freehistpath()' to `atexit()'");
+	strcpy(histpath, homepath);
+	strcat(histpath, "/");
+	strcat(histpath, HISTNAME);
+
+	ht = hc = hb = history;
+	if (!(histfile = fopen(histpath, "r"))) {
+		if (errno == ENOENT) return;
+		err(EXIT_FAILURE, "Unable to open history file for reading");
+	}
+	while (fgets(*ht, BUFLEN, histfile)) {
+		*(*ht + strlen(*ht) - 1) = '\0'; // Get rid of newline
+		ht = history + (ht - history + 1) % HISTLEN;
+		if (ht == hb) hb = NULL;
+	}
+
+	e = ferror(histfile) || !feof(histfile);
+	if (fclose(histfile) == EOF) err(EXIT_FAILURE, "Unable to close history file");
+	if (e) err(EXIT_FAILURE, "Unable to read from history file");
+
+	if (!hb) hb = history + (ht - history + 1) % HISTLEN;
+	hc = ht;
+}
+
+void writehist(void) {
+	FILE *histfile;
+
+	if (!(histfile = fopen(histpath, "w"))) {
+		warn("Unable to open history file for writing");
+		return;
+	}
+
+	while (hb != ht) {
+		if (fputs(*hb, histfile) == EOF) {
+			warn("Unable to write to history file");
+			break;
+		}
+		if (fputc('\n', histfile) == EOF) {
+			warn("Unable to write newline to history file");
+			break;
+		}
+		hb = history + (hb - history + 1) % HISTLEN;
+	}
+
+	if (fclose(histfile) == EOF) warn("Unable to close history stream");
+}
 
 enum {
 	CTRLC = '\003',
@@ -31,9 +104,7 @@ enum {
 };
 
 char *getinput(void) {
-	static char history[HISTLEN][BUFLEN], result[BUFLEN],
-	            (*hb)[BUFLEN] = history, (*hc)[BUFLEN] = history,
-	            (*ht)[BUFLEN] = history;
+	static char result[BUFLEN];
 	char *cursor, *end;
 	int c, i;
 
@@ -112,19 +183,50 @@ char *getinput(void) {
 	return end > result ? result : NULL;
 }
 
+int delimiter(char c) {
+	return c == ' ' || c == '&' || c == '|' || c == ';' || c == '`' || c == '\0';
+}
+
 char **tokenize(char *p) {
 	size_t i;
-	static char *result[BUFLEN / 2];
+	static char *result[BUFLEN];
 
 	while (*p == ' ') ++p;
 	for (i = 0; *p; ++i) {
-		result[i] = p;
-		while (*p != ' ' && *p != '\0') ++p;
-		if (*p == '\0') {
-			++i;
+		switch (*p) {
+		case ' ':
+			--i;
+			*p++ = '\0';
+			while (*p == ' ') ++p;
 			break;
+		case '&':
+			*p++ = '\0';
+			if (*p == '&') {
+				++p;
+				result[i] = "&&";
+			} else result[i] = "&";
+			break;
+		case '|':
+			*p++ = '\0';
+			if (*p == '|') {
+				++p;
+				result[i] = "||";
+			} else result[i] = "|";
+			break;
+		case ';':
+			*p++ = '\0';
+			result[i] = ";";
+			break;
+		case '`':
+			*p++ = '\0';
+			result[i] = p;
+			while (*p != '\'') ++p;
+			*p++ = '\0';
+			break;
+		default:
+			result[i] = p++;
+			while (!delimiter(*p)) ++p;
 		}
-		while (*p == ' ') ++p;
 	}
 	result[i] = NULL;
 	return result;
@@ -153,10 +255,10 @@ void await(pid_t cpgid) {
 
 	if (waitpid(cpgid, &status, WUNTRACED) != -1 && !WIFSTOPPED(status)) {
 		while (waitpid(-cpgid, NULL, 0) != -1);
-		if (errno != ECHILD && killpg(cpgid, SIGKILL) == -1) exit(EXIT_FAILURE);
+		if (errno != ECHILD && killpg(cpgid, SIGKILL) == -1) _Exit(EXIT_FAILURE);
 	}
-	if (signal(SIGTTOU, SIG_IGN) == SIG_ERR) exit(EXIT_FAILURE);
-	if (tcsetpgrp(STDIN_FILENO, self) == -1) exit(EXIT_FAILURE);
+	if (signal(SIGTTOU, SIG_IGN) == SIG_ERR) _Exit(EXIT_FAILURE);
+	if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
 	if (signal(SIGTTOU, SIG_DFL) == SIG_ERR) warn("Ignoring signal SIGTTOU");
 
 	if (WIFSIGNALED(status)) putchar('\n');
@@ -179,7 +281,7 @@ int builtin(char **tokens) {
 			return 1;
 		}
 		if (killpg(fgpgid, SIGCONT) == -1) {
-			if (tcsetpgrp(STDIN_FILENO, self) == -1) exit(EXIT_FAILURE);
+			if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
 			warn("Unable to wake up process group %d", fgpgid);
 			return 1;
 		}
@@ -194,6 +296,10 @@ int main(void) {
 	pid_t cpgid;
 	struct termios raw;
 
+	readhist();
+	if (atexit(writehist) == -1)
+		err(EXIT_FAILURE, "Unable to add `writehist()' to `atexit()'");
+
 	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
 		err(EXIT_FAILURE, "Unable to get termios structure");
 	raw = canonical;
@@ -202,12 +308,15 @@ int main(void) {
 	if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
 		err(EXIT_FAILURE, "Unable to set termios structure");
 	if (atexit(ashexit) == -1)
-		err(EXIT_FAILURE, "Unable to set `atexit()'");
+		err(EXIT_FAILURE, "Unable to add `ashexit()' to `atexit()'");
 
 	if ((self = getpgid(0)) == -1) err(EXIT_FAILURE, "Unable to get pgid of self");
 	for (;;) {
 		if (!(input = getinput())) continue;
 		tokens = tokenize(input);
+
+// for (size_t i = 0; tokens[i]; ++i) printf("|%s|, ", tokens[i]);
+// putchar('\n');
 
 		if (!*tokens || builtin(tokens)) continue;
 
@@ -228,7 +337,7 @@ int main(void) {
 			continue;
 		}
 		if (killpg(cpgid, SIGCONT) == -1) {
-			if (tcsetpgrp(STDIN_FILENO, self) == -1) exit(EXIT_FAILURE);
+			if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
 			warn("Process group %d may be blocked; killing it", cpgid);
 			if (killpg(cpgid, SIGKILL) == -1)
 				warn("Unable to kill process group %d; manual termination required", cpgid);
