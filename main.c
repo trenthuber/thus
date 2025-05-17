@@ -1,6 +1,7 @@
 #include <err.h>
 #include <fcntl.h>
-#include <signal.h>
+#include <limits.h>
+#include <signal.h> // TODO: Use sigaction for portability?
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,12 +10,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-struct termios canonical;
-
-void ashexit(void) {
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &canonical) == -1)
-		warn("Unable to return to initial terminal settings");
-}
+struct termios canonical, raw;
 
 void *allocate(size_t s) {
 	void *r;
@@ -29,12 +25,9 @@ void *allocate(size_t s) {
 #define PROMPT "% "
 #define HISTNAME ".ashhistory"
 
+// TODO: This could be its own struct and use macros like the stopped process table
 char history[HISTLEN][BUFLEN], (*hb)[BUFLEN], (*hc)[BUFLEN], (*ht)[BUFLEN];
 static char *histpath;
-
-static void freehistpath(void) {
-	free(histpath);
-}
 
 void readhist(void) {
 	char *homepath;
@@ -44,8 +37,6 @@ void readhist(void) {
 	if (!(homepath = getenv("HOME")))
 		errx(EXIT_FAILURE, "HOME environment variable does not exist");
 	histpath = allocate(strlen(homepath) + 1 + strlen(HISTNAME) + 1);
-	if (atexit(freehistpath) == -1)
-		err(EXIT_FAILURE, "Unable to add `freehistpath()' to `atexit()'");
 	strcpy(histpath, homepath);
 	strcat(histpath, "/");
 	strcat(histpath, HISTNAME);
@@ -90,6 +81,11 @@ void writehist(void) {
 	}
 
 	if (fclose(histfile) == EOF) warn("Unable to close history stream");
+}
+
+void ashexit(void) {
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &canonical) == -1)
+		warn("Unable to return to initial terminal settings");
 }
 
 enum {
@@ -175,83 +171,162 @@ char *getinput(void) {
 			break;
 		}
 	}
+	fpurge(stdout);
+	if (result == end) return NULL;
 	strcpy(*ht, result);
 	ht = history + (ht - history + 1) % HISTLEN;
 	hc = ht;
 	if (ht == hb) hb = history + (hb - history + 1) % HISTLEN;
-
-	return end > result ? result : NULL;
+	return result;
 }
 
 int delimiter(char c) {
 	return c == ' ' || c == '&' || c == '|' || c == ';' || c == '`' || c == '\0';
 }
 
-char **tokenize(char *p) {
-	size_t i;
-	static char *result[BUFLEN];
+enum terminator {
+	BG,
+	AND,
+	PIPE,
+	OR,
+	SEMI,
+};
 
-	while (*p == ' ') ++p;
-	for (i = 0; *p; ++i) {
-		switch (*p) {
-		case ' ':
-			--i;
-			*p++ = '\0';
-			while (*p == ' ') ++p;
-			break;
-		case '&':
-			*p++ = '\0';
-			if (*p == '&') {
-				++p;
-				result[i] = "&&";
-			} else result[i] = "&";
-			break;
-		case '|':
-			*p++ = '\0';
-			if (*p == '|') {
-				++p;
-				result[i] = "||";
-			} else result[i] = "|";
-			break;
-		case ';':
-			*p++ = '\0';
-			result[i] = ";";
-			break;
-		case '`':
-			*p++ = '\0';
-			result[i] = p;
-			while (*p != '\'') ++p;
-			*p++ = '\0';
-			break;
-		default:
-			result[i] = p++;
-			while (!delimiter(*p)) ++p;
-		}
+enum terminator strp2term(char **strp) {
+	enum terminator result;
+	char *p;
+
+	switch (*(p = (*strp)++)) {
+	case '&':
+		result = **strp == '&' ? (++*strp, AND) : BG;
+		break;
+	case '|':
+		result = **strp == '|' ? (++*strp, OR) : PIPE;
+		break;
+	default:
+		result = SEMI;
 	}
-	result[i] = NULL;
+	*p = '\0';
+
 	return result;
 }
 
-#define BGMAX 128
-struct {
-	pid_t pgids[BGMAX];
-	size_t bp, sp;
-} bgps; // TODO: These are stopped jobs, not background jobs
+struct cmd {
+	char **args;
+	enum terminator type;
+};
 
-void pushbgps(pid_t pgid) {
-	if ((bgps.sp + 1) % BGMAX == bgps.bp) killpg(bgps.pgids[bgps.bp++], SIGKILL);
-	bgps.pgids[++bgps.sp] = pgid;
-// printf("PUSHED pgid %d to stack: bp = %zu, sp = %zu\n", pgid, bgps.bp, bgps.sp);
+struct cmd *getcmds(char *b) {
+	size_t i, j;
+	char **t;
+	struct cmd *c;
+	enum terminator term;
+	static char *tokens[BUFLEN + 1];
+	static struct cmd result[BUFLEN / 2 + 1];
+
+	*tokens = NULL;
+	t = tokens + 1;
+	c = result;
+	while (*b == ' ') ++b;
+	c->args = t;
+	while (*b) switch (*b) {
+	default:
+		*t++ = b;
+		while (!delimiter(*b)) ++b;
+		break;
+	case ' ':
+		*b++ = '\0';
+		while (*b == ' ') ++b;
+		break;
+	case ';':
+	case '&':
+	case '|':
+		if (!*(t - 1)) {
+			strp2term(&b);
+			break;
+		}
+		*t++ = NULL;
+		c++->type = strp2term(&b);
+		c->args = t;
+		break;
+	case '`':
+		*t++ = ++b;
+		while (*b != '\'') ++b;
+		*b = '\0';
+		break;
+	}
+	if (*(t - 1)) {
+		*t = NULL;
+		c++->type = SEMI;
+	}
+	c->args = NULL;
+
+	return result;
 }
 
-pid_t popbgps(void) {
-	return bgps.sp != bgps.bp ? bgps.pgids[bgps.sp--] : -1;
+struct pg {
+	pid_t id;
+	struct termios config;
+};
+
+#define MAXPG 128
+#define INITPGS(pgs) {MAXPG, (pgs).data, (pgs).data, (pgs).data}
+struct pgs {
+	size_t len;
+	struct pg *b, *c, *t, data[MAXPG];
+} sus = INITPGS(sus), bg = INITPGS(bg);
+
+struct pgs *recent = &sus;
+
+#define PLUSONE(s, m) ((s).data + ((s).m - (s).data + 1) % (s).len)
+#define INC(s, m) ((s).m = PLUSONE(s, m))
+#define MINUSONE(s, m) ((s).data + ((s).m - (s).data + (s).len - 1) % (s).len)
+#define DEC(s, m) ((s).m = MINUSONE(s, m))
+
+void push(struct pgs *pgs, struct pg pg) {
+	if (PLUSONE(*pgs, t) == pgs->b) {
+		killpg(pgs->b->id, SIGKILL);
+		INC(*pgs, b);
+	}
+	*pgs->t = pg;
+	INC(*pgs, t);
+}
+
+struct pg peek(struct pgs *pgs) {
+	if (pgs->t == pgs->b) return (struct pg){0};
+	return *MINUSONE(*pgs, t);
+}
+
+struct pg pull(struct pgs *pgs) {
+	struct pg result;
+
+	if ((result = peek(pgs)).id) DEC(*pgs, t);
+	return result;
+}
+
+struct pg *find(struct pgs *pgs, pid_t pgid) {
+	if (pgid == 0 || pgs->t == pgs->b) return NULL;
+	for (pgs->c = MINUSONE(*pgs, t); pgs->c->id != pgid; DEC(*pgs, c))
+		if (pgs->c == pgs->b) return NULL;
+	return pgs->c;
+}
+
+void delete(struct pgs *pgs) {
+	if (pgs->c >= pgs->b) {
+		memmove(pgs->b + 1, pgs->b, sizeof(struct pg) * (pgs->c - pgs->b));
+		++pgs->b;
+		INC(*pgs, c);
+	} else {
+		memmove(pgs->c, pgs->c + 1, sizeof(struct pg) * (pgs->t - pgs->c - 1));
+		--pgs->t;
+	}
 }
 
 pid_t self;
 
-void await(pid_t cpgid) {
-	int status;
+int waitfg(pid_t cpgid) {
+	int status, result;
+	struct pg pg;
 
 	if (waitpid(cpgid, &status, WUNTRACED) != -1 && !WIFSTOPPED(status)) {
 		while (waitpid(-cpgid, NULL, 0) != -1);
@@ -261,40 +336,127 @@ void await(pid_t cpgid) {
 	if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
 	if (signal(SIGTTOU, SIG_DFL) == SIG_ERR) warn("Ignoring signal SIGTTOU");
 
-	if (WIFSIGNALED(status)) putchar('\n');
-	if (WIFSTOPPED(status)) pushbgps(cpgid);
+	if (WIFSIGNALED(status)) {
+		putchar('\n');
+		result = WTERMSIG(status);
+	} else if (WIFSTOPPED(status)) {
+		pg = (struct pg){
+			.id = cpgid,
+			.config = canonical,
+		};
+		if (tcgetattr(STDIN_FILENO, &pg.config) == -1)
+			warn("Unable to save termios state for stopped process group %d", cpgid);
+		push(&sus, pg);
+		recent = &sus;
+		result = WSTOPSIG(status);
+	} else result = WEXITSTATUS(status);
+
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
+		warn("Unable to set termios state back to raw");
+
+	return result;
 }
 
 int builtin(char **tokens) {
-	pid_t fgpgid;
+	long id;
+	struct pg pg;
+	int fg;
 
 	if (strcmp(tokens[0], "cd") == 0) {
 		if (chdir(tokens[1]) == -1)
 			warn("Unable to change directory to `%s'", tokens[1]);
-	} else if (strcmp(tokens[0], "fg") == 0) { // TODO: Take an argument
-		if ((fgpgid = popbgps()) == -1) {
-			warnx("No background processes");
+	} else if (strcmp(tokens[0], "fg") == 0) {
+		if (tokens[1]) {
+			errno = 0;
+			if ((id = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno || id <= 0) {
+				warn("Invalid process group id");
+				return 1;
+			}
+			if (find(&sus, (pid_t)id)) pg = *sus.c;
+			else if (find(&bg, (pid_t)id)) pg = *bg.c;
+			else {
+				warn("Unable to find process group %ld", id);
+				return 1;
+			}
+		} else if (!(pg = peek(recent)).id) {
+			warnx("No processes to bring into the foreground");
 			return 1;
 		}
-		if (tcsetpgrp(STDIN_FILENO, fgpgid) == -1) {
-			warn("Unable to bring process group %d to foreground", fgpgid);
+		if (tcsetattr(STDIN_FILENO, TCSANOW, &pg.config) == -1) {
+			warn("Unable to reload termios state for process group %d", pg.id);
 			return 1;
 		}
-		if (killpg(fgpgid, SIGCONT) == -1) {
+		if (tcsetpgrp(STDIN_FILENO, pg.id) == -1) {
+			warn("Unable to bring process group %d to foreground", pg.id);
+			if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
+				warn("Unable to set termios state back to raw mode");
+			return 1;
+		}
+		if (killpg(pg.id, SIGCONT) == -1) {
 			if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
-			warn("Unable to wake up process group %d", fgpgid);
+			warn("Unable to wake up suspended process group %d", pg.id);
+			if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
+				warn("Unable to set termios state back to raw mode");
 			return 1;
 		}
-		await(fgpgid);
-	} else return 0;
+		if (tokens[1]) delete(recent); else pull(recent);
+		waitfg(pg.id);
+	} else if (strcmp(tokens[0], "bg") == 0) {
+		if (tokens[1]) {
+			errno = 0;
+			if ((id = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno || id <= 0) {
+				warn("Invalid process group id");
+				return 1;
+			}
+			if (!find(&sus, (pid_t)id)) {
+				warn("Unable to find process group %ld", id);
+				return 1;
+			}
+			pg = *sus.c;
+		} else if (!(pg = peek(&sus)).id) {
+			warnx("No suspended processes to run in the background");
+			return 1;
+		}
+		if (killpg(pg.id, SIGCONT) == -1) {
+			warn("Unable to wake up suspended process group %d", pg.id);
+			return 1;
+		}
+		if (tokens[1]) delete(&sus); else pull(&sus);
+		push(&bg, pg);
+		recent = &bg;
+	} else {
+		return 0;
+	}
 
 	return 1;
 }
 
+void waitbg(int sig) {
+	int status;
+	pid_t pid, pgid;
+
+	(void)sig;
+	for (bg.c = bg.b; bg.c != bg.t; INC(bg, c))
+		do switch ((pid = waitpid(-bg.c->id, &status, WNOHANG | WUNTRACED))) {
+		case -1:
+			if (errno != ECHILD) warn("Unable to wait on some child processes");
+		case 0:
+			break;
+		default:
+			if (WIFSTOPPED(status)) {
+				push(&sus, *bg.c);
+				delete(&bg);
+				recent = &sus;
+				pid = 0;
+			}
+		} while (pid > 0);
+}
+
 int main(void) {
-	char *input, **tokens;
-	pid_t cpgid;
-	struct termios raw;
+	char *input;
+	struct cmd *cmds;
+	pid_t cpid;
+	int status;
 
 	readhist();
 	if (atexit(writehist) == -1)
@@ -311,40 +473,69 @@ int main(void) {
 		err(EXIT_FAILURE, "Unable to add `ashexit()' to `atexit()'");
 
 	if ((self = getpgid(0)) == -1) err(EXIT_FAILURE, "Unable to get pgid of self");
-	for (;;) {
+	for (;; waitbg(0)) {
+		signal(SIGCHLD, waitbg);
 		if (!(input = getinput())) continue;
-		tokens = tokenize(input);
-
-// for (size_t i = 0; tokens[i]; ++i) printf("|%s|, ", tokens[i]);
-// putchar('\n');
-
-		if (!*tokens || builtin(tokens)) continue;
-
-		if ((cpgid = fork()) == 0 && execvp(tokens[0], tokens) == -1) {
-			warn("Unable to run command `%s'", tokens[0]);
-			_Exit(EXIT_FAILURE);
+		signal(SIGCHLD, SIG_DFL);
+		for (cmds = getcmds(input); (*cmds).args; ++cmds) {
+			switch ((*cmds).type) {
+			case PIPE:
+				break;
+			case OR:
+			case BG:
+			case AND:
+			case SEMI:
+				if (!builtin((*cmds).args)) {
+					if ((cpid = fork()) == -1) {
+						warn("Unable to fork command `%s'", *(*cmds).args);
+						goto end;
+					} else if (cpid == 0) {
+						if (execvp(*(*cmds).args, (*cmds).args) == -1) {
+							warn("Unable to run command `%s'", *(*cmds).args);
+							_Exit(EXIT_FAILURE);
+						}
+					}
+					if (setpgid(cpid, cpid) == -1) {
+						warn("Unable to set process group of process %d", cpid);
+						if (kill(cpid, SIGKILL) == -1)
+							warn("Unable to kill process %d; manual termination required", cpid);
+						goto end;
+					}
+					if ((*cmds).type == BG) {
+						push(&bg, (struct pg){
+						          	.id = cpid,
+						          	.config = canonical,
+						          });
+						recent = &bg;
+					} else {
+						if (tcsetattr(STDIN_FILENO, TCSANOW, &canonical) == -1)
+							warn("Unable to set termios structure");
+						if (tcsetpgrp(STDIN_FILENO, cpid) == -1) {
+							warn("Unable to bring process group %d to foreground", cpid);
+							if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
+								warn("Unable to set termios state back to raw");
+							if (killpg(cpid, SIGKILL) == -1)
+								warn("Unable to kill process group %d; manual termination required", cpid);
+							goto end;
+						}
+						if (killpg(cpid, SIGCONT) == -1) {
+							if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
+							warn("Process group %d may be blocked; killing it", cpid);
+							if (killpg(cpid, SIGKILL) == -1)
+								warn("Unable to kill process group %d; manual termination required", cpid);
+							else warn("Successfully terminated process group %d", cpid);
+							if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
+								warn("Unable to set termios state back to raw");
+							goto end;
+						}
+						status = waitfg(cpid);
+						if ((*cmds).type == AND && status != 0) goto end;
+						if ((*cmds).type == OR && status == 0) goto end;
+					}
+				}
+			}
 		}
-		if (setpgid(cpgid, cpgid) == -1) {
-			warn("Unable to set process group of process %d", cpgid);
-			if (kill(cpgid, SIGKILL) == -1)
-				warn("Unable to kill process %d; manual termination required", cpgid);
-			continue;
-		}
-		if (tcsetpgrp(STDIN_FILENO, cpgid) == -1) {
-			warn("Unable to bring process group %d to foreground", cpgid);
-			if (killpg(cpgid, SIGKILL) == -1)
-				warn("Unable to kill process group %d; manual termination required", cpgid);
-			continue;
-		}
-		if (killpg(cpgid, SIGCONT) == -1) {
-			if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
-			warn("Process group %d may be blocked; killing it", cpgid);
-			if (killpg(cpgid, SIGKILL) == -1)
-				warn("Unable to kill process group %d; manual termination required", cpgid);
-			else warn("Successfully terminated process group %d", cpgid);
-			continue;
-		}
-		await(cpgid);
+	end:;
 	}
 
 	return 0;
