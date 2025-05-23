@@ -1,0 +1,1 @@
+int getinput(char *buffer);
