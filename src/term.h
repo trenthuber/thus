@@ -1,7 +1,6 @@
-extern struct termios canonical, raw;
-extern pid_t self;
+extern struct termios raw, canonical;
 
 void initterm(void);
 void deinitterm(void);
-int setfg(pid_t pgid);
-int waitfg(pid_t pgid);
+int setfg(struct job job);
+int waitfg(struct job job);

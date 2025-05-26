@@ -1,7 +1,7 @@
-#define HISTLEN 101
-#define BUFLEN 1001
+#define HISTLEN 100
+#define BUFLEN 1000
 
-extern char history[HISTLEN][BUFLEN], (*hb)[BUFLEN], (*hc)[BUFLEN], (*ht)[BUFLEN];
+extern struct stack history;
 
 void readhist(void);
 void writehist(void);

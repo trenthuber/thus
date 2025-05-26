@@ -1,1 +1,1 @@
-int getinput(char *buffer);
+char *input(void);

@@ -1,20 +1,22 @@
 #include <err.h>
-#include <signal.h> // TODO: Use sigaction for portability? but this is also used with killpg, so don't remove it
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/errno.h>
 #include <termios.h>
 #include <unistd.h>
-#include <sys/errno.h>
+#include <stdio.h> // DEBUG
 
 #include "builtins.h"
-#include "cmd.h"
+#include "stack.h"
 #include "history.h"
 #include "input.h"
-#include "pg.h"
+#include "lex.h"
+#include "job.h"
 #include "term.h"
 #include "utils.h"
 
-int closepipe(struct cmd *cmd) {
+static int closepipe(struct cmd *cmd) {
 	int result;
 
 	if (!cmd->args) return 1;
@@ -32,42 +34,37 @@ int closepipe(struct cmd *cmd) {
 }
 
 int main(void) {
-	char buffer[BUFLEN];
 	struct cmd *cmd, *prev;
-	int status;
-	pid_t id;
+	int ispipe, ispipestart, ispipeend, status;
+	pid_t cpid, jobid;
+	struct job job;
 
 	initterm();
 	readhist();
 
-	while (getinput(buffer)) {
-		prev = cmd = getcmds(buffer);
-		while (prev->args) ++prev;
-		while (cmd->args) {
-			if (cmd->type != PIPE && prev->type != PIPE) {
-				if (isbuiltin(cmd->args, &status)) break;
-				if ((id = fork()) == 0 && execvp(*cmd->args, cmd->args) == -1)
-					err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
-				if (setpgid(id, id) == -1) {
-					warn("Unable to set pgid of `%s' command to %d", *cmd->args, id);
-					if (kill(id, SIGKILL) == -1)
-						warn("Unable to kill process %d; manual termination may be required",
-							 id);
-					break;
-				}
-			} else {
-				if (cmd->type == PIPE && pipe(cmd->pipe) == -1) {
-					warn("Unable to create pipe");
-					if (prev->type == PIPE) closepipe(prev);
-					break;
-				}
-				if ((id = fork()) == 0) {
-					if (dup2(prev->pipe[0], 0) == -1)
-						err(EXIT_FAILURE, "Unable to duplicate read end of `%s' pipe",
-						    *prev->args);
-					if (!closepipe(prev)) exit(EXIT_FAILURE);
+	while ((cmd = lex(input()))) {
+		while (prev = cmd++, cmd->args) {
+			ispipe = cmd->type == PIPE || prev->type == PIPE;
+			ispipestart = ispipe && prev->type != PIPE;
+			ispipeend = ispipe && cmd->type != PIPE;
 
-					if (cmd->type == PIPE) {
+			if (ispipe) {
+				if (!ispipeend && pipe(cmd->pipe) == -1) {
+					warn("Unable to create pipe");
+					if (!ispipestart) closepipe(prev);
+					break;
+				}
+				if ((jobid = cpid = fork()) == -1) {
+					warn("Unable to create child process");
+					break;
+				} else if (cpid == 0) {
+					if (!ispipestart) {
+						if (dup2(prev->pipe[0], 0) == -1)
+							err(EXIT_FAILURE, "Unable to duplicate read end of `%s' pipe",
+								*prev->args);
+						if (!closepipe(prev)) exit(EXIT_FAILURE);
+					}
+					if (!ispipeend) {
 						if (dup2(cmd->pipe[1], 1) == -1)
 							err(EXIT_FAILURE, "Unable to duplicate write end of `%s' pipe",
 								*cmd->args);
@@ -78,30 +75,42 @@ int main(void) {
 					if (execvp(*cmd->args, cmd->args) == -1)
 						err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
 				}
-				if (prev->type == PIPE) closepipe(prev);
-				else push(&bgpgs, (struct pg){.id = id, .config = canonical,});
-				if (setpgid(id, peek(&bgpgs).id) == -1) {
-					if (errno != ESRCH) {
-						warn("Unable to set pgid of `%s' command to %d", *cmd->args, peek(&bgpgs).id);
-						if (kill(id, SIGKILL) == -1)
-							warn("Unable to kill process %d; manual termination may be required",
-							     id);
-					}
+				if (!ispipestart) {
+					closepipe(prev);
+					jobid = ((struct job *)(ispipeend ? pull : peek)(&jobs))->id;
+				}
+			} else {
+				if (isbuiltin(cmd->args, &status)) break;
+				if ((jobid = cpid = fork()) == -1) {
+					warn("Unable to create child process");
+					break;
+				} else if (cpid == 0 && execvp(*cmd->args, cmd->args) == -1)
+					err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
+			}
+			if (setpgid(cpid, jobid) == -1) {
+				if (errno != ESRCH) {
+					warn("Unable to set pgid of `%s' command to %d", *cmd->args, jobid);
+					if (kill(cpid, SIGKILL) == -1)
+						warn("Unable to kill process %d; manual termination may be required",
+							 cpid);
+				}
+				break;
+			}
+
+			job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
+			if (ispipestart || cmd->type == BG) {
+				if (!push(&jobs, &job)) {
+					warn("Unable to add command to background; "
+					     "too many processes in the background");
+					if (ispipestart) closepipe(cmd);
 					break;
 				}
-				if (cmd->type != PIPE) id = peek(&bgpgs).id;
-			}
-			if (cmd->type == BG) {
-				push(&bgpgs, (struct pg){.id = id, .config = canonical,});
-				recent = &bgpgs;
 			} else if (cmd->type != PIPE) {
-				if (prev->type == PIPE) pull(&bgpgs);
-				if (!setfg(id)) break;
-				status = waitfg(id);
+				if (!setfg(job)) break;
+				status = waitfg(job);
+				if (cmd->type == AND && status != 0) break;
+				if (cmd->type == OR && status == 0) break;
 			}
-			if (cmd->type == AND && status != 0) break;
-			if (cmd->type == OR && status == 0) break;
-			prev = cmd++;
 		}
 		waitbg(0);
 	}

@@ -1,42 +1,41 @@
 #include <stddef.h>
 
 #include "history.h"
-#include "cmd.h"
+#include "lex.h"
 
-int delimiter(char c) {
+static char *tokens[1 + BUFLEN + 1];
+static struct cmd cmds[1 + (BUFLEN + 1) / 2 + 1];
+
+static int delimiter(char c) {
 	return c == ' ' || c == '&' || c == '|' || c == ';' || c == '`' || c == '\0';
 }
 
-enum terminator strp2term(char **strp) {
-	enum terminator result;
+static enum terminator strp2term(char **strp) {
 	char *p;
+	enum terminator term;
 
 	switch (*(p = (*strp)++)) {
 	case '&':
-		result = **strp == '&' ? (++*strp, AND) : BG;
+		term = **strp == '&' ? (++*strp, AND) : BG;
 		break;
 	case '|':
-		result = **strp == '|' ? (++*strp, OR) : PIPE;
+		term = **strp == '|' ? (++*strp, OR) : PIPE;
 		break;
 	default:
-		result = SEMI;
+		term = SEMI;
 	}
 	*p = '\0';
 
-	return result;
+	return term;
 }
 
-struct cmd *getcmds(char *b) {
-	size_t i, j;
+struct cmd *lex(char *b) {
 	char **t;
 	struct cmd *c;
-	enum terminator term;
-	static char *tokens[BUFLEN + 1];
-	static struct cmd result[BUFLEN / 2 + 1];
 
-	*tokens = NULL;
+	if (!b) return NULL;
 	t = tokens + 1;
-	c = result;
+	c = cmds + 1;
 	while (*b == ' ') ++b;
 	c->args = t;
 	while (*b) switch (*b) {
@@ -51,13 +50,11 @@ struct cmd *getcmds(char *b) {
 	case ';':
 	case '&':
 	case '|':
-		if (!*(t - 1)) {
-			strp2term(&b);
-			break;
-		}
-		*t++ = NULL;
-		c++->type = strp2term(&b);
-		c->args = t;
+		if (*(t - 1)) {
+			*t++ = NULL;
+			c++->type = strp2term(&b);
+			c->args = t;
+		} else strp2term(&b);
 		break;
 	case '`':
 		*t++ = ++b;
@@ -71,5 +68,5 @@ struct cmd *getcmds(char *b) {
 	}
 	*c = (struct cmd){0};
 
-	return result;
+	return cmds;
 }

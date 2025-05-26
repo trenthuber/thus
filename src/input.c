@@ -5,14 +5,19 @@
 #include <unistd.h>
 
 #include "history.h"
-#include "pg.h"
+#include "job.h"
+#include "stack.h"
 
 #define PROMPT "% "
 
-enum {
+enum character {
 	CTRLC = '\003',
 	CTRLD,
+	CLEAR = '\014',
 	ESCAPE = '\033',
+	FORWARD = 'f',
+	BACKWARD = 'b',
+	ARROW = '[',
 	UP = 'A',
 	DOWN,
 	RIGHT,
@@ -20,19 +25,23 @@ enum {
 	BACKSPACE = '\177',
 };
 
-int getinput(char *buffer) {
+static char buffer[BUFLEN + 1];
+
+char *input(void) {
 	char *cursor, *end;
 	int c, i;
 
-	signal(SIGCHLD, waitbg);
+	signal(SIGCHLD, waitbg); // TODO: Use sigaction for portability
 
+reset:
 	end = cursor = buffer;
-	*buffer = '\0';
+	*history.t = *buffer = '\0';
+	history.c = history.t;
 	while (buffer == end) {
 		fputs(PROMPT, stdout);
 		while ((c = getchar()) != '\n') {
 			if (c >= ' ' && c <= '~') {
-				if (end - buffer == BUFLEN - 1) continue;
+				if (end - buffer == BUFLEN) continue;
 				memmove(cursor + 1, cursor, end - cursor);
 				*cursor++ = c;
 				*++end = '\0';
@@ -43,44 +52,54 @@ int getinput(char *buffer) {
 			} else switch (c) {
 			case CTRLC:
 				puts("^C");
-				ungetc('\n', stdin);
-				continue;
+				goto reset;
 			case CTRLD:
 				puts("^D");
 				signal(SIGCHLD, SIG_DFL);
-				return 0;
+				return NULL;
+			case CLEAR:
+				fputs("\033[H\033[J", stdout);
+				fputs(PROMPT, stdout);
+				fputs(buffer, stdout);
+				continue;
 			case ESCAPE:
-				if ((c = getchar()) != '[') {
-					ungetc(c, stdin);
-					break;
-				}
 				switch ((c = getchar())) {
-				case UP:
-				case DOWN:
-					if (hc == (c == UP ? hb : ht)) continue;
-					if (strcmp(*hc, buffer) != 0) strcpy(*ht, buffer);
-
-					putchar('\r');
-					for (i = end - buffer + strlen(PROMPT); i > 0; --i) putchar(' ');
-					putchar('\r');
-					fputs(PROMPT, stdout);
-
-					hc = history + ((hc - history + (c == UP ? -1 : 1)) % HISTLEN + HISTLEN)
-						 % HISTLEN;
-					strcpy(buffer, *hc);
-					end = cursor = buffer + strlen(buffer);
-
-					fputs(buffer, stdout);
+				case FORWARD:
+					while (cursor != end && *cursor != ' ') putchar(*cursor++);
+					while (cursor != end && *cursor == ' ') putchar(*cursor++);
 					break;
-				case LEFT:
-					if (cursor > buffer) {
-						putchar('\b');
-						--cursor;
+				case BACKWARD:
+					while (cursor != buffer && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
+					while (cursor != buffer && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
+					break;
+				case ARROW:
+					switch ((c = getchar())) {
+					case UP:
+					case DOWN:
+						if (history.c == (c == UP ? history.b : history.t)) continue;
+
+						putchar('\r');
+						for (i = end - buffer + strlen(PROMPT); i > 0; --i) putchar(' ');
+						putchar('\r');
+
+						if (strcmp(history.c, buffer) != 0) strcpy(history.t, buffer);
+						if (c == UP) DEC(history, c); else INC(history, c);
+						strcpy(buffer, history.c);
+						end = cursor = buffer + strlen(buffer);
+
+						fputs(PROMPT, stdout);
+						fputs(buffer, stdout);
+						break;
+					case LEFT:
+						if (cursor > buffer) putchar((--cursor, '\b'));
+						break;
+					case RIGHT:
+						if (cursor < end) putchar(*cursor++);
+						break;
 					}
 					break;
-				case RIGHT:
-					if (cursor < end) putchar(*cursor++);
-					break;
+				default:
+					ungetc(c, stdin);
 				}
 				break;
 			case BACKSPACE:
@@ -98,15 +117,11 @@ int getinput(char *buffer) {
 			}
 		}
 	}
-
 	fpurge(stdout);
-	strcpy(*ht, buffer);
-	ht = history + (ht - history + 1) % HISTLEN;
-	hc = ht;
-	if (ht == hb) hb = history + (hb - history + 1) % HISTLEN;
+	push(&history, buffer);
 
 	signal(SIGCHLD, SIG_DFL);
 
-	return 1;
+	return buffer;
 }
 

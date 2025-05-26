@@ -12,4 +12,4 @@ struct cmd {
 	int pipe[2];
 };
 
-struct cmd *getcmds(char *b);
+struct cmd *lex(char *b);

@@ -1,18 +1,23 @@
 #include <err.h>
-#include <unistd.h>
-#include <termios.h>
-#include <sys/errno.h>
-#include <stdlib.h>
 #include <limits.h>
 #include <signal.h>
-#include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/errno.h>
+#include <termios.h>
+#include <unistd.h>
 
-#include "pg.h"
+#include "job.h"
+#include "stack.h"
 #include "term.h"
-#include "wait.h"
 
 #define BUILTINSIG(name) int name(char **tokens)
+
+struct builtin {
+	char *name;
+	BUILTINSIG((*func));
+};
 
 BUILTINSIG(cd) {
 	if (!tokens[1]) return 1;
@@ -22,83 +27,72 @@ BUILTINSIG(cd) {
 }
 
 BUILTINSIG(fg) {
-	long id;
-	struct pg pg;
+	long jobid;
+	struct job *job;
 
 	if (tokens[1]) {
 		errno = 0;
-		if ((id = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno || id <= 0) {
+		if ((jobid = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno
+		    || jobid <= 0) {
 			warn("Invalid process group id");
 			return 1;
 		}
-		if (find(&spgs, (pid_t)id)) pg = *spgs.c;
-		else if (find(&bgpgs, (pid_t)id)) pg = *bgpgs.c;
-		else {
-			warn("Unable to find process group %ld", id);
+		if (!(job = findjob((pid_t)jobid))) {
+			warnx("Unable to find process group %d", (pid_t)jobid);
 			return 1;
 		}
-	} else if (!(pg = peek(recent)).id) {
+		job = deletejob();
+	} else if (!(job = pull(&jobs))) {
 		warnx("No processes to bring into the foreground");
 		return 1;
 	}
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &pg.config) == -1) {
-		warn("Unable to reload termios state for process group %d", pg.id);
-		return 1;
-	}
-	if (tcsetpgrp(STDIN_FILENO, pg.id) == -1) {
-		warn("Unable to bring process group %d to foreground", pg.id);
-		if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
-			warn("Unable to set termios state back to raw mode");
-		return 1;
-	}
-	if (killpg(pg.id, SIGCONT) == -1) {
-		if (tcsetpgrp(STDIN_FILENO, self) == -1) _Exit(EXIT_FAILURE);
-		warn("Unable to wake up suspended process group %d", pg.id);
-		if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1)
-			warn("Unable to set termios state back to raw mode");
-		return 1;
-	}
-	if (tokens[1]) cut(recent); else pull(recent);
-	waitfg(pg.id);
+	setfg(*job);
+	waitfg(*job);
+
 	return 0;
 }
 
 BUILTINSIG(bg) {
-	long id;
-	struct pg pg;
+	long jobid;
+	struct job *job;
 
 	if (tokens[1]) {
 		errno = 0;
-		if ((id = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno || id <= 0) {
-			warn("Invalid process group id");
+		if ((jobid = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno
+		    || jobid <= 0) {
+			warn("Invalid job id");
 			return 1;
 		}
-		if (!find(&spgs, (pid_t)id)) {
-			warn("Unable to find process group %ld", id);
+		if (!(job = findjob((pid_t)jobid))) {
+			warnx("Unable to find job %d", (pid_t)jobid);
 			return 1;
 		}
-		pg = *spgs.c;
-	} else if (!(pg = peek(&spgs)).id) {
-		warnx("No suspended processes to run in the background");
+		if (job->type == BACKGROUND) {
+			warnx("Job %d already in background", (pid_t)jobid);
+			return 1;
+		}
+	} else
+		for (jobs.c = MINUSONE(jobs, t); CURRENT->type == BACKGROUND; DEC(jobs, c))
+			if (jobs.c == jobs.b) {
+				warnx("No suspended jobs to run in background");
+				return 1;
+			}
+	job = deletejob();
+
+	if (!(push(&jobs, job))) {
+		warnx("Unable to add job to background; too many jobs");
 		return 1;
 	}
-	if (killpg(pg.id, SIGCONT) == -1) {
-		warn("Unable to wake up suspended process group %d", pg.id);
+	if (killpg(job->id, SIGCONT) == -1) {
+		warn("Unable to wake up suspended process group %d", job->id);
 		return 1;
 	}
-	if (tokens[1]) cut(&spgs); else pull(&spgs);
-	push(&bgpgs, pg);
-	recent = &bgpgs;
+	job->type = BACKGROUND;
+
 	return 0;
 }
 
-struct builtin {
-	char *name;
-	int (*func)(char **tokens);
-};
-
 #define BUILTIN(name) {#name, name}
-
 BUILTINSIG(which);
 struct builtin builtins[] = {
 	BUILTIN(cd),
