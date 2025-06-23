@@ -13,12 +13,6 @@
 static struct job jobarray[MAXJOBS + 1];
 struct stack INITSTACK(jobs, jobarray, 0);
 
-void sigkill(pid_t jobid) {
-	if (killpg(jobid, SIGKILL) == -1)
-		warn("Unable to kill process group %d; manual termination may be required",
-		     jobid);
-}
-
 void *findjob(pid_t jobid) {
 	if (jobs.b == jobs.t) return NULL;
 	for (jobs.c = jobs.b; CURRENT->id != jobid; INC(jobs, c))

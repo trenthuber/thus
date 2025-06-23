@@ -57,6 +57,12 @@ quit:
 	exit(EXIT_FAILURE);
 }
 
+static void sigkill(pid_t jobid) {
+	if (killpg(jobid, SIGKILL) == -1)
+		warn("Unable to kill process group %d; manual termination may be required",
+		     jobid);
+}
+
 int setfg(struct job job) {
 	if (tcsetattr(STDIN_FILENO, TCSANOW, &job.config) == -1)
 		warn("Unable to set termios structure");
