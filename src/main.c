@@ -44,6 +44,7 @@ int main(void) {
 
 	while ((cmd = lex(input()))) {
 		while (prev = cmd++, cmd->args) {
+			printfreds(cmd);
 			ispipe = cmd->type == PIPE || prev->type == PIPE;
 			ispipestart = ispipe && prev->type != PIPE;
 			ispipeend = ispipe && cmd->type != PIPE;

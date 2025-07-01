@@ -120,10 +120,11 @@ reset:
 	fpurge(stdout);
 	push(&history, start);
 
+	*buffer = ';';
 	*end = ';';
 	*++end = '\0';
 
 	signal(SIGCHLD, SIG_DFL);
 
-	return start;
+	return buffer;
 }
