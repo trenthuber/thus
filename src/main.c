@@ -1,11 +1,12 @@
 #include <err.h>
+#include <fcntl.h>
 #include <signal.h>
+#include <stdio.h> // DEBUG
 #include <stdlib.h>
 #include <string.h>
 #include <sys/errno.h>
 #include <termios.h>
 #include <unistd.h>
-#include <stdio.h> // DEBUG
 
 #include "builtins.h"
 #include "stack.h"
@@ -33,6 +34,46 @@ static int closepipe(struct cmd *cmd) {
 	return result;
 }
 
+static int redirectfiles(struct fred *f) {
+	int oflag, fd;
+
+	for (; f->mode; ++f) {
+		if (f->type == NAME) {
+			switch (f->mode) {
+			case READ:
+				oflag = O_RDONLY;
+				break;
+			case WRITE:
+				oflag = O_WRONLY | O_CREAT | O_TRUNC;
+				break;
+			case READWRITE:
+				oflag = O_RDWR | O_CREAT | O_APPEND;
+				break;
+			case APPEND:
+				oflag = O_WRONLY | O_CREAT | O_APPEND;
+				break;
+			default:;
+			}
+			if ((fd = open(f->old.name, oflag, 0644)) == -1) {
+				warn("Unable to open `%s'", f->old.name);
+				return 0;
+			}
+			f->old.fd = fd;
+		}
+		if (dup2(f->old.fd, f->newfd) == -1) {
+			warn("Unable to redirect %d to %d", f->newfd, f->old.fd);
+			return 0;
+		}
+		if (f->type == NAME) {
+			if (close(f->old.fd) == -1) {
+				warn("Unable to close file descriptor %d", f->old.fd);
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+
 int main(void) {
 	struct cmd *cmd, *prev;
 	int ispipe, ispipestart, ispipeend, status;
@@ -44,7 +85,6 @@ int main(void) {
 
 	while ((cmd = lex(input()))) {
 		while (prev = cmd++, cmd->args) {
-			printfreds(cmd);
 			ispipe = cmd->type == PIPE || prev->type == PIPE;
 			ispipestart = ispipe && prev->type != PIPE;
 			ispipeend = ispipe && cmd->type != PIPE;
@@ -72,6 +112,7 @@ int main(void) {
 						if (!closepipe(cmd)) exit(EXIT_FAILURE);
 					}
 
+					if (!redirectfiles(cmd->freds)) exit(EXIT_FAILURE);
 					if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
 					if (execvp(*cmd->args, cmd->args) == -1)
 						err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
@@ -81,12 +122,16 @@ int main(void) {
 					jobid = ((struct job *)(ispipeend ? pull : peek)(&jobs))->id;
 				}
 			} else {
-				if (isbuiltin(cmd->args, &status)) break;
+				if (cmd->freds->mode == END && isbuiltin(cmd->args, &status)) break;
 				if ((jobid = cpid = fork()) == -1) {
 					warn("Unable to create child process");
 					break;
-				} else if (cpid == 0 && execvp(*cmd->args, cmd->args) == -1)
-					err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
+				} else if (cpid == 0) {
+					if (!redirectfiles(cmd->freds)) exit(EXIT_FAILURE);
+					if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
+					if (execvp(*cmd->args, cmd->args) == -1)
+						err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
+				}
 			}
 			if (setpgid(cpid, jobid) == -1) {
 				if (errno != ESRCH) {

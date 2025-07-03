@@ -46,7 +46,7 @@ struct fred {
 struct cmd {
 	char **args;
 	enum terminator type;
-	struct fred *f, freds[(BUFLEN - 1) / 3 + 1];
+	struct fred freds[(BUFLEN - 1) / 3 + 1];
 	int pipe[2];
 };
 
