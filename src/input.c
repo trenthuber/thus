@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "history.h"
+#include "input.h"
 #include "job.h"
 #include "stack.h"
 
@@ -25,23 +26,23 @@ enum character {
 	BACKSPACE = '\177',
 };
 
-static char buffer[1 + BUFLEN + 2];
+static char buffer[BUFLEN + 2]; // Terminating ';'
 
 char *input(void) {
-	char *start, *cursor, *end;
+	char *cursor, *end;
 	int c, i;
 
 	signal(SIGCHLD, waitbg); // TODO: Use sigaction for portability
 
 reset:
-	end = cursor = start = buffer + 1;
-	*history.t = *start = '\0';
+	end = cursor = buffer;
+	*history.t = *buffer = '\0';
 	history.c = history.t;
-	while (start == end) {
+	while (buffer == end) {
 		fputs(PROMPT, stdout);
 		while ((c = getchar()) != '\n') {
 			if (c >= ' ' && c <= '~') {
-				if (end - start == BUFLEN) continue;
+				if (end - buffer == BUFLEN) continue;
 				memmove(cursor + 1, cursor, end - cursor);
 				*cursor++ = c;
 				*++end = '\0';
@@ -60,7 +61,7 @@ reset:
 			case CLEAR:
 				fputs("\033[H\033[J", stdout);
 				fputs(PROMPT, stdout);
-				fputs(start, stdout);
+				fputs(buffer, stdout);
 				continue;
 			case ESCAPE:
 				switch ((c = getchar())) {
@@ -69,8 +70,8 @@ reset:
 					while (cursor != end && *cursor == ' ') putchar(*cursor++);
 					break;
 				case BACKWARD:
-					while (cursor != start && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
-					while (cursor != start && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
+					while (cursor != buffer && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
+					while (cursor != buffer && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
 					break;
 				case ARROW:
 					switch ((c = getchar())) {
@@ -79,19 +80,19 @@ reset:
 						if (history.c == (c == UP ? history.b : history.t)) continue;
 
 						putchar('\r');
-						for (i = end - start + strlen(PROMPT); i > 0; --i) putchar(' ');
+						for (i = end - buffer + strlen(PROMPT); i > 0; --i) putchar(' ');
 						putchar('\r');
 
-						if (strcmp(history.c, start) != 0) strcpy(history.t, start);
+						if (strcmp(history.c, buffer) != 0) strcpy(history.t, buffer);
 						if (c == UP) DEC(history, c); else INC(history, c);
-						strcpy(start, history.c);
-						end = cursor = start + strlen(start);
+						strcpy(buffer, history.c);
+						end = cursor = buffer + strlen(buffer);
 
 						fputs(PROMPT, stdout);
-						fputs(start, stdout);
+						fputs(buffer, stdout);
 						break;
 					case LEFT:
-						if (cursor > start) putchar((--cursor, '\b'));
+						if (cursor > buffer) putchar((--cursor, '\b'));
 						break;
 					case RIGHT:
 						if (cursor < end) putchar(*cursor++);
@@ -103,7 +104,7 @@ reset:
 				}
 				break;
 			case BACKSPACE:
-				if (cursor == start) continue;
+				if (cursor == buffer) continue;
 				memmove(cursor - 1, cursor, end - cursor);
 				--cursor;
 				*--end = '\0';
@@ -118,9 +119,8 @@ reset:
 		}
 	}
 	fpurge(stdout);
-	push(&history, start);
+	push(&history, buffer);
 
-	*buffer = ';';
 	*end = ';';
 	*++end = '\0';
 

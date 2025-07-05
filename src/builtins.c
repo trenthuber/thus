@@ -71,12 +71,14 @@ BUILTINSIG(bg) {
 			warnx("Job %d already in background", (pid_t)jobid);
 			return 1;
 		}
-	} else
-		for (jobs.c = MINUSONE(jobs, t); CURRENT->type == BACKGROUND; DEC(jobs, c))
-			if (jobs.c == jobs.b) {
-				warnx("No suspended jobs to run in background");
-				return 1;
-			}
+	} else {
+		for (jobs.c = MINUSONE(jobs, t); jobs.c != MINUSONE(jobs, b); DEC(jobs, c))
+			if (CURRENT->type == SUSPENDED) break;
+		if (jobs.c == MINUSONE(jobs, b)) {
+			warnx("No suspended jobs to run in background");
+			return 1;
+		}
+	}
 	job = deletejob();
 
 	if (!(push(&jobs, job))) {

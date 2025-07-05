@@ -1,3 +1,17 @@
+enum accessmode {
+	END,
+	READ = '<',
+	READWRITE,
+	WRITE = '>',
+	APPEND,
+};
+
+struct redirect {
+	enum accessmode mode;
+	int oldfd, newfd;
+	char *oldname;
+};
+
 enum terminator {
 	SEMI = ';',
 	BG = '&',
@@ -6,49 +20,14 @@ enum terminator {
 	OR,
 };
 
-enum mode {
-	END,
-	READ = '<',
-	READWRITE,
-	WRITE = '>',
-	APPEND,
-};
-
-enum type {
-	FD,
-	NAME,
-};
-
-// if (cmd->f->type == NAME) cmd->f->old.fd = open(cmd->f->old.name, mode);
-// dup2(cmd->f->newfd, cmd->f->old.fd);
-// if (cmd->f->type == NAME) close(cmd->f->old.fd);
-// 
-// // vs.
-// 
-// if (*cmd->f->oldfd == '&') fd = open(++cmd->f->oldfd, mode);
-// dup2(cmd->f->newfd, cmd->
-
-struct fred {
-	int newfd;
-	enum mode mode;
-	enum type type;
-	union {
-		int fd;
-		char *name;
-	} old;
-};
-
-/* a>&b -> dup2(b, a); reopen(a, "w"); | (1)>&3 -> dup2(3, 1);
- * a<&b -> dup2(b, a); reopen(a, "r"); | (0)<&3 -> dup2(3, 0);
- * x >a >b >c ...
- */
-
+#define MAXRDS 25
 struct cmd {
 	char **args;
-	enum terminator type;
-	struct fred freds[(BUFLEN - 1) / 3 + 1];
+	struct redirect *r, rds[MAXRDS + 1];
+	enum terminator term;
 	int pipe[2];
 };
 
-void printfreds(struct cmd *c);
+extern struct cmd empty;
+
 struct cmd *lex(char *b);

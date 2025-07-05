@@ -23,7 +23,7 @@ void *findjob(pid_t jobid) {
 void *deletejob(void) {
 	memcpy(jobs.t, jobs.c, jobs.size);
 	memmove(jobs.c, PLUSONE(jobs, c), jobs.t - jobs.c);
-	return MINUSONE(jobs, t);
+	return DEC(jobs, t);
 }
 
 void waitbg(int sig) {

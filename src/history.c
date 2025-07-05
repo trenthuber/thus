@@ -4,11 +4,11 @@
 #include <string.h>
 #include <sys/errno.h>
 
-#include "history.h"
 #include "input.h"
 #include "stack.h"
 #include "utils.h"
 
+#define HISTLEN 100
 #define HISTNAME ".ashhistory"
 
 static char *histpath, histarr[HISTLEN + 1][BUFLEN + 1];

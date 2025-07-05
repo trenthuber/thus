@@ -34,12 +34,12 @@ static int closepipe(struct cmd *cmd) {
 	return result;
 }
 
-static int redirectfiles(struct fred *f) {
+static int redirectfiles(struct redirect *r) {
 	int oflag, fd;
 
-	for (; f->mode; ++f) {
-		if (f->type == NAME) {
-			switch (f->mode) {
+	for (; r->mode; ++r) {
+		if (r->oldname) {
+			switch (r->mode) {
 			case READ:
 				oflag = O_RDONLY;
 				break;
@@ -54,19 +54,19 @@ static int redirectfiles(struct fred *f) {
 				break;
 			default:;
 			}
-			if ((fd = open(f->old.name, oflag, 0644)) == -1) {
-				warn("Unable to open `%s'", f->old.name);
+			if ((fd = open(r->oldname, oflag, 0644)) == -1) {
+				warn("Unable to open `%s'", r->oldname);
 				return 0;
 			}
-			f->old.fd = fd;
+			r->oldfd = fd;
 		}
-		if (dup2(f->old.fd, f->newfd) == -1) {
-			warn("Unable to redirect %d to %d", f->newfd, f->old.fd);
+		if (dup2(r->oldfd, r->newfd) == -1) {
+			warn("Unable to redirect %d to %d", r->newfd, r->oldfd);
 			return 0;
 		}
-		if (f->type == NAME) {
-			if (close(f->old.fd) == -1) {
-				warn("Unable to close file descriptor %d", f->old.fd);
+		if (r->oldname) {
+			if (close(r->oldfd) == -1) {
+				warn("Unable to close file descriptor %d", r->oldfd);
 				return 0;
 			}
 		}
@@ -83,11 +83,11 @@ int main(void) {
 	initterm();
 	readhist();
 
-	while ((cmd = lex(input()))) {
-		while (prev = cmd++, cmd->args) {
-			ispipe = cmd->type == PIPE || prev->type == PIPE;
-			ispipestart = ispipe && prev->type != PIPE;
-			ispipeend = ispipe && cmd->type != PIPE;
+	for (prev = &empty; (cmd = lex(input())); prev = &empty) {
+		for (; cmd->args; prev = cmd++) {
+			ispipe = cmd->term == PIPE || prev->term == PIPE;
+			ispipestart = ispipe && prev->term != PIPE;
+			ispipeend = ispipe && cmd->term != PIPE;
 
 			if (ispipe) {
 				if (!ispipeend && pipe(cmd->pipe) == -1) {
@@ -112,7 +112,7 @@ int main(void) {
 						if (!closepipe(cmd)) exit(EXIT_FAILURE);
 					}
 
-					if (!redirectfiles(cmd->freds)) exit(EXIT_FAILURE);
+					if (!redirectfiles(cmd->rds)) exit(EXIT_FAILURE);
 					if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
 					if (execvp(*cmd->args, cmd->args) == -1)
 						err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
@@ -122,12 +122,12 @@ int main(void) {
 					jobid = ((struct job *)(ispipeend ? pull : peek)(&jobs))->id;
 				}
 			} else {
-				if (cmd->freds->mode == END && isbuiltin(cmd->args, &status)) break;
+				if (cmd->rds->mode == END && isbuiltin(cmd->args, &status)) break;
 				if ((jobid = cpid = fork()) == -1) {
 					warn("Unable to create child process");
 					break;
 				} else if (cpid == 0) {
-					if (!redirectfiles(cmd->freds)) exit(EXIT_FAILURE);
+					if (!redirectfiles(cmd->rds)) exit(EXIT_FAILURE);
 					if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
 					if (execvp(*cmd->args, cmd->args) == -1)
 						err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
@@ -144,18 +144,18 @@ int main(void) {
 			}
 
 			job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
-			if (ispipestart || cmd->type == BG) {
+			if (ispipestart || cmd->term == BG) {
 				if (!push(&jobs, &job)) {
 					warn("Unable to add command to background; "
 					     "too many processes in the background");
 					if (ispipestart) closepipe(cmd);
 					break;
 				}
-			} else if (cmd->type != PIPE) {
+			} else if (cmd->term != PIPE) {
 				if (!setfg(job)) break;
 				status = waitfg(job);
-				if (cmd->type == AND && status != 0) break;
-				if (cmd->type == OR && status == 0) break;
+				if (cmd->term == AND && status != 0) break;
+				if (cmd->term == OR && status == 0) break;
 			}
 		}
 		waitbg(0);
