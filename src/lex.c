@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h> // XXX
 
 #include "input.h"
@@ -15,7 +16,7 @@ static struct cmd cmds[MAXCMDS + 1];
 struct cmd empty = {0};
 
 struct cmd *lex(char *b) {
-	char **t, *end;
+	char **t, *end, *p;
 	struct cmd *c;
 	long l;
 	
@@ -33,7 +34,7 @@ struct cmd *lex(char *b) {
 		if (*(b - 1)) {
 			if (c->args == --t) c->args = NULL;
 			if ((l = strtol(*t, &end, 10)) < 0 || l > INT_MAX || end != b) {
-				warnx("Invalid file redirection operator");
+				warnx("Invalid file redirection");
 				return &empty;
 			}
 			c->r->newfd = l;
@@ -45,6 +46,37 @@ struct cmd *lex(char *b) {
 		}
 		c->r++->oldname = b + 1;
 		if (*(b + 1) == '&') ++b;
+		break;
+	case '"':
+		for (end = ++b; *end && *end != '"'; ++end) if (*end == '\\') ++end;
+		if (!*end) {
+			warnx("Open-ended quote");
+			return &empty;
+		}
+		*end++ = '\0';
+		*t++ = p = b;
+		b = end;
+		while (p != end) if (*p++ == '\\') {
+			switch (*p) {
+			case 'n':
+				*p = '\n';
+				break;
+			case 't':
+				*p = '\t';
+				break;
+			case 'r':
+				*p = '\r';
+				break;
+			case 'v':
+				*p = '\v';
+				break;
+			}
+			memmove(p - 1, p, end-- - p);
+		}
+		break;
+	case '=':
+		break;
+	case '$':
 		break;
 	case '&':
 	case '|':
