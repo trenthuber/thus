@@ -26,7 +26,7 @@ enum character {
 	BACKSPACE = '\177',
 };
 
-static char buffer[BUFLEN + 2]; // Terminating ';'
+static char buffer[BUFLEN + 2]; // Terminating ";"
 
 char *input(void) {
 	char *cursor, *end;
@@ -121,8 +121,8 @@ reset:
 	fpurge(stdout);
 	push(&history, buffer);
 
-	*end = ';';
-	*++end = '\0';
+	*end++ = ';';
+	*end = '\0';
 
 	signal(SIGCHLD, SIG_DFL);
 

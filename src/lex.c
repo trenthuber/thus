@@ -16,17 +16,21 @@ static struct cmd cmds[MAXCMDS + 1];
 struct cmd empty = {0};
 
 struct cmd *lex(char *b) {
-	char **t, *end, *p;
+	char **t, *end, *p, *env, *name, *value;
+	int e, offset;
 	struct cmd *c;
 	long l;
 	
 	if (!b) return NULL;
 	t = tokens;
 	c = cmds;
+	value = name = NULL;
 	for (c->args = NULL, c->r = c->rds; *b; ++b) switch (*b) {
 	default:
 		if (!c->args) c->args = t;
-		if (!*(b - 1)) *t++ = b;
+		if (!*(b - 1)) {
+			if (!name) *t++ = b; else if (!value) value = b;
+		}
 		break;
 	case '<':
 	case '>':
@@ -48,15 +52,27 @@ struct cmd *lex(char *b) {
 		if (*(b + 1) == '&') ++b;
 		break;
 	case '"':
-		for (end = ++b; *end && *end != '"'; ++end) if (*end == '\\') ++end;
-		if (!*end) {
+		if (!*(b - 1)) {
+			if (!name) *t++ = b; else if (!value) value = b;
+		}
+		for (end = (p = b) + 1, b = NULL; *end; ++end) {
+			if (!b && *end == '"') b = end;
+			if (*end == '\\') ++end;
+		}
+		if (!b) {
 			warnx("Open-ended quote");
 			return &empty;
 		}
-		*end++ = '\0';
-		*t++ = p = b;
-		b = end;
-		while (p != end) if (*p++ == '\\') {
+
+		// "..."...\0
+		// ^   ^   ^
+		// p   b   end
+		memmove(p, p + 1, end-- - p);
+		--b;
+		// ..."...\0
+		// ^  ^   ^
+		// p  b   end
+		while (p != b) if (*p++ == '\\') {
 			switch (*p) {
 			case 'n':
 				*p = '\n';
@@ -72,15 +88,47 @@ struct cmd *lex(char *b) {
 				break;
 			}
 			memmove(p - 1, p, end-- - p);
+			--b;
 		}
+		*end = '\0';
+		memmove(p, p + 1, end - p);
+		--b;
 		break;
 	case '=':
+		name = *--t;
+		*b = '\0';
 		break;
 	case '$':
+		if (!*(b - 1)) {
+			if (!name) *t++ = b; else if (!value) value = b;
+		}
+		p = b++;
+		while (*b && *b != '$') ++b;
+		if (!*b) {
+			warnx("Open-ended environment variable");
+			return &empty;
+		}
+		*b++ = '\0';
+		for (end = b; *end; ++end);
+		// $...\0...\0
+		// ^     ^  ^
+		// p     b end
+
+		if ((env = getenv(p + 1)) == NULL) {
+			warnx("Unknown environment variable");
+			return &empty;
+		}
+		e = strlen(env);
+		offset = e - (b - p);
+		memmove(b + offset, b, end - b);
+		strncpy(p, env, e);
+		b += offset - 1;
+		*(end + offset) = '\0';
 		break;
 	case '&':
 	case '|':
 	case ';':
+		if (name && *c->args == name) c->args = NULL;
 		if (c->args) {
 			if ((c->term = *b) != ';' && *b == *(b + 1)) {
 				++c->term;
@@ -103,6 +151,13 @@ struct cmd *lex(char *b) {
 		c->r = c->rds;
 	case ' ':
 		*b = '\0';
+		if (value) {
+			if (setenv(name, value, 1) == -1) {
+				warn("Unable to set environment variable");
+				return &empty;
+			}
+			value = name = NULL;
+		}
 	}
 
 	switch ((c - 1)->term) {
