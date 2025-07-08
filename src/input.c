@@ -1,3 +1,4 @@
+#include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +27,24 @@ enum character {
 	BACKSPACE = '\177',
 };
 
-static char buffer[BUFLEN + 2]; // Terminating ";"
+char buffer[BUFLEN + 2]; // Terminating ";"
+
+char *strinput(char **strp) {
+	char *p;
+	size_t l;
+
+	if (!**strp) return NULL;
+	p = *strp;
+	while (**strp && **strp != '\n') ++*strp;
+	l = (*strp)++ - p;
+	if (l > BUFLEN)
+		errx(EXIT_FAILURE, "Line is too long; exceeds %d characters", BUFLEN);
+	strncpy(buffer, p, l);
+	*(buffer + l++) = ';';
+	*(buffer + l) = '\0';
+
+	return buffer;
+}
 
 char *input(void) {
 	char *cursor, *end;
@@ -34,26 +52,29 @@ char *input(void) {
 
 	signal(SIGCHLD, waitbg); // TODO: Use sigaction for portability
 
-reset:
 	end = cursor = buffer;
 	*history.t = *buffer = '\0';
 	history.c = history.t;
 	while (buffer == end) {
 		fputs(PROMPT, stdout);
 		while ((c = getchar()) != '\n') {
-			if (c >= ' ' && c <= '~') {
-				if (end - buffer == BUFLEN) continue;
-				memmove(cursor + 1, cursor, end - cursor);
-				*cursor++ = c;
-				*++end = '\0';
+			switch (c) {
+			default:
+				if (c >= ' ' && c <= '~') {
+					if (end - buffer == BUFLEN) continue;
+					memmove(cursor + 1, cursor, end - cursor);
+					*cursor++ = c;
+					*++end = '\0';
 
-				putchar(c);
-				fputs(cursor, stdout);
-				for (i = end - cursor; i > 0; --i) putchar('\b');
-			} else switch (c) {
+					putchar(c);
+					fputs(cursor, stdout);
+					for (i = end - cursor; i > 0; --i) putchar('\b');
+				}
+				break;
 			case CTRLC:
 				puts("^C");
-				goto reset;
+				*buffer = '\0';
+				return buffer;
 			case CTRLD:
 				puts("^D");
 				signal(SIGCHLD, SIG_DFL);

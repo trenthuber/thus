@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/errno.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -74,95 +76,159 @@ static int redirectfiles(struct redirect *r) {
 	return 1;
 }
 
-int main(void) {
-	struct cmd *cmd, *prev;
-	int ispipe, ispipestart, ispipeend, status;
+void run(struct cmd *cmd) {
+	struct cmd *prev;
+	int ispipe, ispipestart, ispipeend;
+	static int status;
 	pid_t cpid, jobid;
 	struct job job;
 
-	initterm();
-	readhist();
+	for (prev = &empty; cmd->args; prev = cmd++) {
+		ispipe = cmd->term == PIPE || prev->term == PIPE;
+		ispipestart = ispipe && prev->term != PIPE;
+		ispipeend = ispipe && cmd->term != PIPE;
 
-	for (prev = &empty; (cmd = lex(input())); prev = &empty) {
-		for (; cmd->args; prev = cmd++) {
-			ispipe = cmd->term == PIPE || prev->term == PIPE;
-			ispipestart = ispipe && prev->term != PIPE;
-			ispipeend = ispipe && cmd->term != PIPE;
-
-			if (ispipe) {
-				if (!ispipeend && pipe(cmd->pipe) == -1) {
-					warn("Unable to create pipe");
-					if (!ispipestart) closepipe(prev);
-					break;
-				}
-				if ((jobid = cpid = fork()) == -1) {
-					warn("Unable to create child process");
-					break;
-				} else if (cpid == 0) {
-					if (!ispipestart) {
-						if (dup2(prev->pipe[0], 0) == -1)
-							err(EXIT_FAILURE, "Unable to duplicate read end of `%s' pipe",
-								*prev->args);
-						if (!closepipe(prev)) exit(EXIT_FAILURE);
-					}
-					if (!ispipeend) {
-						if (dup2(cmd->pipe[1], 1) == -1)
-							err(EXIT_FAILURE, "Unable to duplicate write end of `%s' pipe",
-								*cmd->args);
-						if (!closepipe(cmd)) exit(EXIT_FAILURE);
-					}
-
-					if (!redirectfiles(cmd->rds)) exit(EXIT_FAILURE);
-					if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
-					if (execvp(*cmd->args, cmd->args) == -1)
-						err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
-				}
-				if (!ispipestart) {
-					closepipe(prev);
-					jobid = ((struct job *)(ispipeend ? pull : peek)(&jobs))->id;
-				}
-			} else {
-				if (cmd->rds->mode == END && isbuiltin(cmd->args, &status)) break;
-				if ((jobid = cpid = fork()) == -1) {
-					warn("Unable to create child process");
-					break;
-				} else if (cpid == 0) {
-					if (!redirectfiles(cmd->rds)) exit(EXIT_FAILURE);
-					if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
-					if (execvp(*cmd->args, cmd->args) == -1)
-						err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
-				}
-			}
-			if (setpgid(cpid, jobid) == -1) {
-				if (errno != ESRCH) {
-					warn("Unable to set pgid of `%s' command to %d", *cmd->args, jobid);
-					if (kill(cpid, SIGKILL) == -1)
-						warn("Unable to kill process %d; manual termination may be required",
-							 cpid);
-				}
+		if (ispipe) {
+			if (!ispipeend && pipe(cmd->pipe) == -1) {
+				warn("Unable to create pipe");
+				if (!ispipestart) closepipe(prev);
 				break;
 			}
-
-			job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
-			if (ispipestart || cmd->term == BG) {
-				if (!push(&jobs, &job)) {
-					warn("Unable to add command to background; "
-					     "too many processes in the background");
-					if (ispipestart) closepipe(cmd);
-					break;
+			if ((jobid = cpid = fork()) == -1) {
+				warn("Unable to create child process");
+				break;
+			} else if (cpid == 0) {
+				if (!ispipestart) {
+					if (dup2(prev->pipe[0], 0) == -1)
+						err(EXIT_FAILURE, "Unable to duplicate read end of `%s' pipe",
+							*prev->args);
+					if (!closepipe(prev)) exit(EXIT_FAILURE);
 				}
-			} else if (cmd->term != PIPE) {
-				if (!setfg(job)) break;
-				status = waitfg(job);
-				if (cmd->term == AND && status != 0) break;
-				if (cmd->term == OR && status == 0) break;
+				if (!ispipeend) {
+					if (dup2(cmd->pipe[1], 1) == -1)
+						err(EXIT_FAILURE, "Unable to duplicate write end of `%s' pipe",
+							*cmd->args);
+					if (!closepipe(cmd)) exit(EXIT_FAILURE);
+				}
+
+				if (!redirectfiles(cmd->rds)) exit(EXIT_FAILURE);
+				if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
+				if (execvp(*cmd->args, cmd->args) == -1)
+					err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
+			}
+			if (!ispipestart) {
+				closepipe(prev);
+				jobid = ((struct job *)(ispipeend ? pull : peek)(&jobs))->id;
+			}
+		} else {
+			if (cmd->rds->mode == END && isbuiltin(cmd->args, &status)) break;
+			if ((jobid = cpid = fork()) == -1) {
+				warn("Unable to create child process");
+				break;
+			} else if (cpid == 0) {
+				if (!redirectfiles(cmd->rds)) exit(EXIT_FAILURE);
+				if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
+				if (execvp(*cmd->args, cmd->args) == -1)
+					err(EXIT_FAILURE, "Couldn't find `%s' command", *cmd->args);
 			}
 		}
-		waitbg(0);
+		if (setpgid(cpid, jobid) == -1) {
+			if (errno != ESRCH) {
+				warn("Unable to set pgid of `%s' command to %d", *cmd->args, jobid);
+				if (kill(cpid, SIGKILL) == -1)
+					warn("Unable to kill process %d; manual termination may be required",
+						 cpid);
+			}
+			break;
+		}
+
+		job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
+		if (ispipestart || cmd->term == BG) {
+			if (!push(&jobs, &job)) {
+				warn("Unable to add command to background; "
+					 "too many processes in the background");
+				if (ispipestart) closepipe(cmd);
+				break;
+			}
+		} else if (cmd->term != PIPE) {
+			if (!setfg(job)) break;
+			status = waitfg(job);
+			if (cmd->term == AND && status != 0) break;
+			if (cmd->term == OR && status == 0) break;
+		}
+	}
+	waitbg(0);
+}
+
+void usage(void) {
+	puts("TODO: PRINT USAGE MESSAGE");
+}
+
+char *getoptions(int argc, char **argv, int *l) {
+	int opt, help, fd;
+	struct cmd *cmd;
+	char *r;
+	struct stat fdstat;
+
+	help = 0;
+	r = NULL;
+	while ((opt = getopt(argc, argv, ":c:h")) != -1) switch (opt) {
+	case 'c':
+		*l = strlen(optarg) + 2;
+		if (!(r = malloc(*l))) err(EXIT_FAILURE, "Memory allocation");
+		strcpy(r, optarg);
+		*(r + *l - 1) = ';';
+		*(r + *l) = '\0';
+		break;
+	case 'h':
+		help = 1;
+		break;
+	case ':':
+		errx(EXIT_FAILURE, "Expected argument following `-%c'", optopt);
+	case '?':
+	default:
+		errx(EXIT_FAILURE, "Unknown command line option `-%c'", optopt);
+	}
+	argc -= optind;
+	argv += optind;
+
+	if (help) {
+		usage();
+		return EXIT_SUCCESS;
 	}
 
-	writehist();
+	if (r) *argv = NULL;
+	else if (*argv) {
+		if ((fd = open(*argv, O_RDONLY)) == -1)
+			err(EXIT_FAILURE, "Unable to open `%s'", *argv);
+		if (stat(*argv, &fdstat) == -1)
+			err(EXIT_FAILURE, "Unable to stat `%s'", *argv);
+		if ((r = mmap(NULL, *l = fdstat.st_size, PROT_READ, MAP_PRIVATE, fd, 0))
+		    == MAP_FAILED)
+			err(EXIT_FAILURE, "Unable to memory map `%s'", *argv);
+		if (close(fd) == -1) err(EXIT_FAILURE, "Unable to close `%s'", *argv);
+	}
+
+	return r;
+}
+
+int main(int argc, char **argv) {
+	struct cmd *cmd;
+	char *o, *p;
+	int l;
+
+	p = o = getoptions(argc, argv, &l);
+
+	initterm();
+	if (p) {
+		while ((cmd = lex(strinput(&p)))) run(cmd);
+		if (*argv) munmap(o, l); else free(o);
+	} else {
+		readhist();
+		while ((cmd = lex(input()))) run(cmd);
+		writehist();
+	}
 	deinitterm();
 
-	return 0;
+	return EXIT_SUCCESS;
 }

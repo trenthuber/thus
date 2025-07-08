@@ -125,12 +125,14 @@ struct cmd *lex(char *b) {
 		b += offset - 1;
 		*(end + offset) = '\0';
 		break;
+	case '#':
+		*(b + 1) = '\0';
 	case '&':
 	case '|':
 	case ';':
 		if (name && *c->args == name) c->args = NULL;
 		if (c->args) {
-			if ((c->term = *b) != ';' && *b == *(b + 1)) {
+			if ((c->term = *b) == *(b + 1) && *b == '&' || *b == '|') {
 				++c->term;
 				*b++ = '\0';
 			}
@@ -160,7 +162,7 @@ struct cmd *lex(char *b) {
 		}
 	}
 
-	switch ((c - 1)->term) {
+	if (c-- != cmds) switch (c->term) {
 	case AND:
 	case PIPE:
 	case OR:
