@@ -9,6 +9,7 @@
 #include "input.h"
 #include "job.h"
 #include "stack.h"
+#include "options.h"
 
 #define PROMPT "% "
 
@@ -28,23 +29,6 @@ enum character {
 };
 
 char buffer[BUFLEN + 2]; // Terminating ";"
-
-char *strinput(char **strp) {
-	char *p;
-	size_t l;
-
-	if (!**strp) return NULL;
-	p = *strp;
-	while (**strp && **strp != '\n') ++*strp;
-	l = (*strp)++ - p;
-	if (l > BUFLEN)
-		errx(EXIT_FAILURE, "Line is too long; exceeds %d characters", BUFLEN);
-	strncpy(buffer, p, l);
-	*(buffer + l++) = ';';
-	*(buffer + l) = '\0';
-
-	return buffer;
-}
 
 char *input(void) {
 	char *cursor, *end;

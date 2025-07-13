@@ -7,7 +7,9 @@
 	SRCDIR "input", \
 	SRCDIR "job", \
 	SRCDIR "lex", \
+	SRCDIR "options", \
 	SRCDIR "main", \
+	SRCDIR "run", \
 	SRCDIR "stack", \
 	SRCDIR "term", \
 	SRCDIR "utils"

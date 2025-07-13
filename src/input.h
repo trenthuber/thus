@@ -2,5 +2,4 @@
 
 extern char buffer[BUFLEN + 2];
 
-char *strinput(char **strp);
 char *input(void);
