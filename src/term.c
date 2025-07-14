@@ -11,114 +11,76 @@
 #include "stack.h"
 
 struct termios raw, canonical;
-static pid_t self;
 
-static int tcsetraw(void) {
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1) {
-		warn("Unable to set termios state to raw mode");
+static int setconfig(struct termios *mode) {
+	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
+		warn("Unable to set termios config");
 		return 0;
 	}
-
 	return 1;
 }
 
 void initterm(void) {
+	cfmakeraw(&raw);
 	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
-		err(EXIT_FAILURE, "Unable to get termios structure");
-	raw = canonical;
-	raw.c_lflag &= ~ICANON & ~ECHO & ~ISIG;
-	raw.c_lflag |= ECHONL;
-	if (!tcsetraw()) exit(EXIT_FAILURE);
-
-	if ((self = getpgid(0)) == -1) err(EXIT_FAILURE, "Unable to get pgid of self");
+		err(EXIT_FAILURE, "Unable to get default termios config");
+	if (!setconfig(&raw)) exit(EXIT_FAILURE);
 }
 
 void deinitterm(void) {
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &canonical) == -1)
-		warn("Unable to return to initial terminal settings");
-}
-
-static void tcsetself(void) {
-	if (signal(SIGTTOU, SIG_IGN) == SIG_ERR) {
-		warn("Unable to ignore SIGTTOU signal");
-		goto quit;
-	}
-	if (tcsetpgrp(STDIN_FILENO, self) == -1) {
-		warn("Unable to set self as foreground process; exiting");
-		goto quit;
-	}
-	if (signal(SIGTTOU, SIG_DFL) == SIG_ERR) warn("Ignoring signal SIGTTOU");
-
-	return;
-
-quit:
-	writehist();
-	deinitterm();
-	exit(EXIT_FAILURE);
-}
-
-static void sigkill(pid_t jobid) {
-	if (killpg(jobid, SIGKILL) == -1)
-		warn("Unable to kill process group %d; manual termination may be required",
-		     jobid);
+	setconfig(&canonical);
 }
 
 int setfg(struct job job) {
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &job.config) == -1)
-		warn("Unable to set termios structure");
+	if (!setconfig(&job.config)) return 0;
 	if (tcsetpgrp(STDIN_FILENO, job.id) == -1) {
-		warn("Unable to bring process group %d to foreground", job.id);
-		goto setraw;
+		warn("Unable to bring job %d to foreground\r", job.id);
+		setconfig(&raw);
+		return 0;
 	}
 	if (killpg(job.id, SIGCONT) == -1) {
-		warn("Unable to wake up suspended process group %d", job.id);
-		goto setself;
+		warn("Unable to wake up job %d\r", job.id);
+		return 0;
 	}
-
 	return 1;
-
-setself:
-	tcsetself();
-
-setraw:
-	tcsetraw();
-
-	sigkill(job.id);
-
-	return 0;
 }
 
 int waitfg(struct job job) {
-	int status, result;
+	int status, pgid, result;
 
-wait:
-	if (waitpid(job.id, &status, WUNTRACED) != -1 && !WIFSTOPPED(status)) {
-		while (waitpid(-job.id, NULL, 0) != -1);
-		if (errno != ECHILD && killpg(job.id, SIGKILL) == -1)
-			err(EXIT_FAILURE, "Unable to kill child process group %d", job.id);
+	errno = 0;
+	do waitpid(job.id, &status, WUNTRACED); while (errno == EINTR);
+	if (!errno && !WIFSTOPPED(status))
+		do while (waitpid(-job.id, NULL, 0) != -1); while (errno == EINTR);
+	result = errno;
+
+	// TODO: Use sigaction >:(
+	if ((pgid = getpgid(0)) == -1 || signal(SIGTTOU, SIG_IGN) == SIG_ERR
+	    || tcsetpgrp(STDIN_FILENO, pgid) == -1
+	    || signal(SIGTTOU, SIG_DFL) == SIG_ERR) {
+		warn("Unable to reclaim foreground; terminating\r");
+		writehist();
+		deinitterm();
+		exit(EXIT_FAILURE);
 	}
-
-	tcsetself();
+	if (tcgetattr(STDIN_FILENO, &job.config) == -1)
+		warn("Unable to save termios config of job %d\r", job.id);
+	setconfig(&raw);
+	if (result) return 1;
 
 	if (WIFSIGNALED(status)) {
-		putchar('\n');
 		result = WTERMSIG(status);
+		puts("\r");
 	} else if (WIFSTOPPED(status)) {
-		if (tcgetattr(STDIN_FILENO, &job.config) == -1)
-			warn("Unable to save termios state for stopped process group %d", job.id);
-		job.type = SUSPENDED;
-		if (!push(&jobs, &job)) {
-			warnx("Unable to add process to job list; too many jobs\n"
-			      "Press any key to continue");
-			getchar();
-			if (setfg(job)) goto wait;
-			warn("Unable to continue foreground process; terminating");
-			sigkill(job.id);
-		}
 		result = WSTOPSIG(status);
-	} else result = WEXITSTATUS(status);
-
-	tcsetraw();
+		job.type = SUSPENDED;
+		if (push(&jobs, &job)) return result;
+		warnx("Unable to add job %d to list; too many jobs\r\n"
+			  "Press any key to continue\r", job.id);
+		getchar();
+		if (setfg(job)) return waitfg(job);
+		warnx("Manual intervention required for job %d\r", job.id);
+	} else if (WIFEXITED(status)) result = WEXITSTATUS(status);
 
 	return result;
 }

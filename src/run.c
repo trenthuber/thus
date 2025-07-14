@@ -199,7 +199,9 @@ void runscript(char *filename) {
 void runinteractive(void) {
 	struct cmd *cmd;
 
+	readhist();
 	while ((cmd = lex(input()))) runcmd(cmd);
+	writehist();
 }
 
 #define MAXPATH 1000

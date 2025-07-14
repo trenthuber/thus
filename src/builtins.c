@@ -46,7 +46,7 @@ BUILTINSIG(fg) {
 		warnx("No processes to bring into the foreground");
 		return 1;
 	}
-	setfg(*job);
+	if (!setfg(*job)) return 1;
 	waitfg(*job);
 
 	return 0;
