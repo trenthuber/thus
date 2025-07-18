@@ -1,29 +1,27 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
 #include <err.h>
-#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-int login;
-char *string;
+#include "config.h"
+#include "input.h"
+#include "options.h"
+
+int login, interactive;
+Input input;
 
 void options(int *argcp, char ***argvp) {
 	int opt, l;
 	char *usage = "TODO: WRITE USAGE";
 
 	login = ***argvp == '-';
+	interactive = 1;
+	input = userinput;
 
-	// -h -> help message
-	// -l -> login shell
-	// -c "***" -> run string
-	// file.ash -> run file
 	while ((opt = getopt(*argcp, *argvp, ":c:hl")) != -1) switch (opt) {
 	case 'c':
-		l = strlen(optarg) + 2;
-		if (!(string = malloc(l))) err(EXIT_FAILURE, "Memory allocation");
-		strcpy(string, optarg);
-		*(string + l - 1) = ';';
-		*(string + l) = '\0';
+		interactive = 0;
+		input = stringinput;
+		string = optarg;
 		break;
 	case 'h':
 		errx(EXIT_SUCCESS, "%s", usage);
@@ -37,5 +35,11 @@ void options(int *argcp, char ***argvp) {
 		errx(EXIT_FAILURE, "Unknown command line option `-%c'\n%s", optopt, usage);
 	}
 	*argcp -= optind;
-	*argvp+= optind;
+	*argvp += optind;
+
+	if (!string && **argvp) {
+		interactive = 0;
+		input = scriptinput;
+		script = **argvp;
+	}
 }

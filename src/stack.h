@@ -5,10 +5,12 @@
 #define DEC(s, m) ((s).m = MINUSONE(s, m))
 
 #define INITSTACK(s, d, o) \
-	s = {sizeof*d, sizeof d, (char *)d, (char *)d, (char *)d, (char *)d, o}
+	struct stack s = {sizeof*d, sizeof d, (uint8_t *)d, (uint8_t *)d, \
+	                  (uint8_t *)d, (uint8_t *)d, o}
+
 struct stack {
-	size_t size, cap; // In bytes
-	char *b, *c, *t, *data;
+	size_t size, cap;
+	uint8_t *b, *c, *t, *data;
 	int overwrite;
 };
 

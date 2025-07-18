@@ -1,3 +1,5 @@
+#define CURRENT ((struct job *)jobs.c)
+
 enum jobtype {
 	BACKGROUND,
 	SUSPENDED,
@@ -9,9 +11,12 @@ struct job {
 	enum jobtype type;
 };
 
-#define CURRENT ((struct job *)jobs.c)
 extern struct stack jobs;
+extern struct termios raw, canonical;
 
 void *findjob(pid_t jobid);
 void *deletejob(void);
-void waitbg(int sig);
+int setconfig(struct termios *mode);
+int setfg(struct job job);
+int waitfg(struct job job);
+void waitbg(void);

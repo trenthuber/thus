@@ -1,25 +1,21 @@
-#include <err.h>
-#include <fcntl.h>
 #include <limits.h>
-#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h> // XXX
 
+#include "config.h"
 #include "input.h"
-#include "lex.h"
+#include "parse.h"
+#include "utils.h"
 
-#define MAXCMDS 100
-
-static char *tokens[BUFLEN + 1];
+static char *tokens[MAXCHARS + 1];
 static struct cmd cmds[MAXCMDS + 1];
 struct cmd empty = {0};
 
-struct cmd *lex(char *b) {
-	char **t, *end, *p, *env, *name, *value;
-	int e, offset;
+struct cmd *parse(char *b) {
+	char **t, *name, *value, *end, *p, *env;
 	struct cmd *c;
 	long l;
+	int e, offset;
 	
 	if (!b) return NULL;
 	t = tokens;
@@ -38,7 +34,7 @@ struct cmd *lex(char *b) {
 		if (*(b - 1)) {
 			if (c->args == --t) c->args = NULL;
 			if ((l = strtol(*t, &end, 10)) < 0 || l > INT_MAX || end != b) {
-				warnx("Invalid file redirection");
+				note("Incorrect syntax for file redirection\r");
 				return &empty;
 			}
 			c->r->newfd = l;
@@ -60,31 +56,25 @@ struct cmd *lex(char *b) {
 			if (*end == '\\') ++end;
 		}
 		if (!b) {
-			warnx("Open-ended quote");
+			note("Quote left open-ended\r");
 			return &empty;
 		}
-
-		// "..."...\0
-		// ^   ^   ^
-		// p   b   end
 		memmove(p, p + 1, end-- - p);
 		--b;
-		// ..."...\0
-		// ^  ^   ^
-		// p  b   end
+
 		while (p != b) if (*p++ == '\\') {
 			switch (*p) {
-			case 'n':
-				*p = '\n';
-				break;
 			case 't':
 				*p = '\t';
+				break;
+			case 'v':
+				*p = '\v';
 				break;
 			case 'r':
 				*p = '\r';
 				break;
-			case 'v':
-				*p = '\v';
+			case 'n':
+				*p = '\n';
 				break;
 			}
 			memmove(p - 1, p, end-- - p);
@@ -105,17 +95,14 @@ struct cmd *lex(char *b) {
 		p = b++;
 		while (*b && *b != '$') ++b;
 		if (!*b) {
-			warnx("Open-ended environment variable");
+			note("Environment variable lacks a terminating `$'\r");
 			return &empty;
 		}
 		*b++ = '\0';
 		for (end = b; *end; ++end);
-		// $...\0...\0
-		// ^     ^  ^
-		// p     b end
 
 		if ((env = getenv(p + 1)) == NULL) {
-			warnx("Unknown environment variable");
+			note("Environment variable does not exist\r");
 			return &empty;
 		}
 		e = strlen(env);
@@ -132,7 +119,7 @@ struct cmd *lex(char *b) {
 	case ';':
 		if (name && *c->args == name) c->args = NULL;
 		if (c->args) {
-			if ((c->term = *b) == *(b + 1) && *b == '&' || *b == '|') {
+			if ((c->term = *b) == *(b + 1) && (*b == '&' || *b == '|')) {
 				++c->term;
 				*b++ = '\0';
 			}
@@ -140,7 +127,7 @@ struct cmd *lex(char *b) {
 			c->r->mode = END;
 			for (c->r = c->rds; c->r->mode; ++c->r) if (*c->r->oldname == '&') {
 				if ((l = strtol(++c->r->oldname, &end, 10)) < 0 || l > INT_MAX || *end) {
-					warnx("Invalid file redirection");
+					note("Incorrect syntax for file redirection\r");
 					return &empty;
 				}
 				c->r->oldfd = l;
@@ -155,7 +142,7 @@ struct cmd *lex(char *b) {
 		*b = '\0';
 		if (value) {
 			if (setenv(name, value, 1) == -1) {
-				warn("Unable to set environment variable");
+				note("Unable to set environment variable\r");
 				return &empty;
 			}
 			value = name = NULL;
@@ -166,7 +153,7 @@ struct cmd *lex(char *b) {
 	case AND:
 	case PIPE:
 	case OR:
-		warnx("Command left open-ended");
+		note("Expected another command\r");
 		return &empty;
 	default:
 		break;

@@ -1,4 +1,3 @@
-#include <err.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
@@ -11,6 +10,7 @@
 #include "job.h"
 #include "stack.h"
 #include "term.h"
+#include "utils.h"
 
 #define BUILTINSIG(name) int name(char **tokens)
 
@@ -19,10 +19,10 @@ struct builtin {
 	BUILTINSIG((*func));
 };
 
-BUILTINSIG(cd) {
+BUILTINSIG(cd) { // TODO: Affect $PWD$ env var
 	if (!tokens[1]) return 1;
 	if (chdir(tokens[1]) != -1) return 0;
-	warn("Unable to change directory to `%s'", tokens[1]);
+	note("Unable to change directory to `%s'", tokens[1]);
 	return 1;
 }
 
@@ -34,16 +34,16 @@ BUILTINSIG(fg) {
 		errno = 0;
 		if ((jobid = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno
 		    || jobid <= 0) {
-			warn("Invalid process group id");
+			note("Invalid process group id");
 			return 1;
 		}
 		if (!(job = findjob((pid_t)jobid))) {
-			warnx("Unable to find process group %d", (pid_t)jobid);
+			note("Unable to find process group %d", (pid_t)jobid);
 			return 1;
 		}
 		job = deletejob();
 	} else if (!(job = pull(&jobs))) {
-		warnx("No processes to bring into the foreground");
+		note("No processes to bring into the foreground");
 		return 1;
 	}
 	if (!setfg(*job)) return 1;
@@ -60,33 +60,33 @@ BUILTINSIG(bg) {
 		errno = 0;
 		if ((jobid = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno
 		    || jobid <= 0) {
-			warn("Invalid job id");
+			note("Invalid job id");
 			return 1;
 		}
 		if (!(job = findjob((pid_t)jobid))) {
-			warnx("Unable to find job %d", (pid_t)jobid);
+			note("Unable to find job %d", (pid_t)jobid);
 			return 1;
 		}
 		if (job->type == BACKGROUND) {
-			warnx("Job %d already in background", (pid_t)jobid);
+			note("Job %d already in background", (pid_t)jobid);
 			return 1;
 		}
 	} else {
 		for (jobs.c = MINUSONE(jobs, t); jobs.c != MINUSONE(jobs, b); DEC(jobs, c))
 			if (CURRENT->type == SUSPENDED) break;
 		if (jobs.c == MINUSONE(jobs, b)) {
-			warnx("No suspended jobs to run in background");
+			note("No suspended jobs to run in background");
 			return 1;
 		}
 	}
 	job = deletejob();
 
 	if (!(push(&jobs, job))) {
-		warnx("Unable to add job to background; too many jobs");
+		note("Unable to add job to background; too many jobs");
 		return 1;
 	}
 	if (killpg(job->id, SIGCONT) == -1) {
-		warn("Unable to wake up suspended process group %d", job->id);
+		note("Unable to wake up suspended process group %d", job->id);
 		return 1;
 	}
 	job->type = BACKGROUND;

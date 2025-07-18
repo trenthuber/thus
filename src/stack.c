@@ -1,18 +1,16 @@
 #include <string.h>
+#include <stdint.h>
 
 #include "stack.h"
 
 int push(struct stack *s, void *d) {
-	int result;
-
-	result = 0;
 	if (PLUSONE(*s, t) == s->b) {
-		if (!s->overwrite) return result;
+		if (!s->overwrite) return 0;
 		INC(*s, b);
-	} else result = 1;
+	}
 	memmove(s->t, d, s->size);
 	INC(*s, t);
-	return result;
+	return 1;
 }
 
 void *peek(struct stack *s) {

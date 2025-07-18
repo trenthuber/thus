@@ -20,7 +20,6 @@ enum terminator {
 	OR,
 };
 
-#define MAXRDS 25
 struct cmd {
 	char **args;
 	struct redirect *r, rds[MAXRDS + 1];
@@ -30,4 +29,4 @@ struct cmd {
 
 extern struct cmd empty;
 
-struct cmd *lex(char *b);
+struct cmd *parse(char *b);

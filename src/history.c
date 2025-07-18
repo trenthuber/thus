@@ -1,63 +1,48 @@
-#include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/errno.h>
 
+#include "config.h"
 #include "input.h"
 #include "stack.h"
 #include "utils.h"
 
-#define HISTLEN 100
-#define HISTNAME ".ashhistory"
+static char historyarr[MAXHIST + 1][MAXCHARS + 1];
+INITSTACK(history, historyarr, 1);
 
-static char *histpath, histarr[HISTLEN + 1][BUFLEN + 1];
-struct stack INITSTACK(history, histarr, 1);
+void readhistory(void) {
+	FILE *file;
 
-void readhist(void) {
-	char *homepath, buffer[BUFLEN + 1];
-	FILE *histfile;
-	int e;
-
-	if (!(homepath = getenv("HOME")))
-		errx(EXIT_FAILURE, "HOME environment variable does not exist");
-	histpath = allocate(strlen(homepath) + 1 + strlen(HISTNAME) + 1);
-	strcpy(histpath, homepath);
-	strcat(histpath, "/");
-	strcat(histpath, HISTNAME);
-
-	if (!(histfile = fopen(histpath, "r"))) {
+	if (!(file = fopen(prependhome(HISTORYFILE), "r"))) {
 		if (errno == ENOENT) return;
-		err(EXIT_FAILURE, "Unable to open history file for reading");
+		fatal("Unable to open history file for reading");
 	}
-	while (fgets(buffer, history.size, histfile)) {
+	while (fgets(buffer, history.size, file)) {
 		*(buffer + strlen(buffer) - 1) = '\0';
 		push(&history, buffer);
 	}
-
-	if (ferror(histfile) || !feof(histfile))
-		err(EXIT_FAILURE, "Unable to read from history file");
-	if (fclose(histfile) == EOF) err(EXIT_FAILURE, "Unable to close history file");
+	if (ferror(file) || !feof(file))
+		fatal("Unable to read from history file");
+	if (fclose(file) == EOF) fatal("Unable to close history file");
 }
 
-void writehist(void) {
-	FILE *histfile;
+void writehistory(void) {
+	FILE *file;
 
-	if (!(histfile = fopen(histpath, "w"))) {
-		warn("Unable to open history file for writing");
+	if (!(file = fopen(prependhome(HISTORYFILE), "w"))) {
+		note("Unable to open history file for writing");
 		return;
 	}
-
 	for (history.c = history.b; history.c != history.t; INC(history, c)) {
-		if (fputs(history.c, histfile) == EOF) {
-			warn("Unable to write to history file");
+		if (fputs((char *)history.c, file) == EOF) {
+			note("Unable to write to history file");
 			break;
 		}
-		if (fputc('\n', histfile) == EOF) {
-			warn("Unable to write newline to history file");
+		if (fputc('\n', file) == EOF) {
+			note("Unable to terminate line of history file");
 			break;
 		}
 	}
-
-	if (fclose(histfile) == EOF) warn("Unable to close history stream");
+	if (fclose(file) == EOF) note("Unable to close history stream");
 }

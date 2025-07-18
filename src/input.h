@@ -1,5 +1,8 @@
-#define BUFLEN 1000
+#define INPUT(name) char *name(void)
 
-extern char buffer[BUFLEN + 2];
+extern char *string, buffer[MAXCHARS + 2], *script;
 
-char *input(void);
+INPUT(stringinput);
+INPUT(scriptinput);
+char *config(char *name);
+INPUT(userinput);

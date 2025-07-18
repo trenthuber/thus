@@ -1,30 +1,23 @@
 #include <stdlib.h>
-#include <termios.h>
-#include <stdio.h> // XXX
 
-#include "job.h"
+#include "config.h"
+#include "input.h"
 #include "options.h"
+#include "parse.h"
 #include "run.h"
-#include "term.h"
+#include "utils.h"
 
 int main(int argc, char **argv) {
-	struct cmd *cmd;
-
-	// TODO: Have `cd' builtin affect $PWD$ env var
-
 	options(&argc, &argv);
 
-	initterm(); // <-- TODO: Set $SHLVL$ in this function
-	if (login) runhome(".ashlogin");
-	if (string) {
-		runstr(string);
-		free(string);
-	} else if (*argv) runscript(*argv);
-	else {
-		runhome(".ashinteractive");
-		runinteractive();
-	}
-	deinitterm();
+	initialize();
+
+	if (login) while (run(parse(config(LOGINFILE))));
+	if (interactive) while (run(parse(config(INTERACTIVEFILE))));
+
+	while (run(parse(input())));
+
+	deinitialize();
 
 	return EXIT_SUCCESS;
 }

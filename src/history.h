@@ -1,4 +1,5 @@
 extern struct stack history;
 
-void readhist(void);
-void writehist(void);
+void readhistory(void);
+void writehistory(void);
+
