@@ -14,7 +14,7 @@ INITSTACK(history, historyarr, 1);
 void readhistory(void) {
 	FILE *file;
 
-	if (!(file = fopen(prependhome(HISTORYFILE), "r"))) {
+	if (!(file = fopen(catpath(home, HISTORYFILE), "r"))) {
 		if (errno == ENOENT) return;
 		fatal("Unable to open history file for reading");
 	}
@@ -30,7 +30,7 @@ void readhistory(void) {
 void writehistory(void) {
 	FILE *file;
 
-	if (!(file = fopen(prependhome(HISTORYFILE), "w"))) {
+	if (!(file = fopen(catpath(home, HISTORYFILE), "w"))) {
 		note("Unable to open history file for writing");
 		return;
 	}

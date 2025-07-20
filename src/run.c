@@ -132,7 +132,6 @@ int run(struct cmd *cmd) {
 			if (cmd->term == OR && status == 0) break;
 		}
 	}
-	waitbg();
 
 	return 1;
 }

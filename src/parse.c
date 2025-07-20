@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "input.h"
+#include "options.h"
 #include "parse.h"
 #include "utils.h"
 
@@ -12,7 +13,7 @@ static struct cmd cmds[MAXCMDS + 1];
 struct cmd empty = {0};
 
 struct cmd *parse(char *b) {
-	char **t, *name, *value, *end, *p, *env;
+	char **t, *name, *value, *stlend, *p, *end, *env;
 	struct cmd *c;
 	long l;
 	int e, offset;
@@ -33,8 +34,8 @@ struct cmd *parse(char *b) {
 		c->r->newfd = *b == '>';
 		if (*(b - 1)) {
 			if (c->args == --t) c->args = NULL;
-			if ((l = strtol(*t, &end, 10)) < 0 || l > INT_MAX || end != b) {
-				note("Incorrect syntax for file redirection\r");
+			if ((l = strtol(*t, &stlend, 10)) < 0 || l > INT_MAX || stlend != b) {
+				note("Incorrect syntax for file redirection");
 				return &empty;
 			}
 			c->r->newfd = l;
@@ -56,7 +57,7 @@ struct cmd *parse(char *b) {
 			if (*end == '\\') ++end;
 		}
 		if (!b) {
-			note("Quote left open-ended\r");
+			note("Quote left open-ended");
 			return &empty;
 		}
 		memmove(p, p + 1, end-- - p);
@@ -95,14 +96,16 @@ struct cmd *parse(char *b) {
 		p = b++;
 		while (*b && *b != '$') ++b;
 		if (!*b) {
-			note("Environment variable lacks a terminating `$'\r");
+			note("Environment variable lacks a terminating `$'");
 			return &empty;
 		}
 		*b++ = '\0';
 		for (end = b; *end; ++end);
 
-		if ((env = getenv(p + 1)) == NULL) {
-			note("Environment variable does not exist\r");
+		l = strtol(p + 1, &stlend, 10);
+		if (stlend == b - 1) env = l >= 0 && l < argc ? argv[l] : b - 1;
+		else if ((env = getenv(p + 1)) == NULL) {
+			note("Environment variable does not exist");
 			return &empty;
 		}
 		e = strlen(env);
@@ -126,8 +129,9 @@ struct cmd *parse(char *b) {
 			*b = '\0';
 			c->r->mode = END;
 			for (c->r = c->rds; c->r->mode; ++c->r) if (*c->r->oldname == '&') {
-				if ((l = strtol(++c->r->oldname, &end, 10)) < 0 || l > INT_MAX || *end) {
-					note("Incorrect syntax for file redirection\r");
+				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0
+				    || l > INT_MAX || *stlend) {
+					note("Incorrect syntax for file redirection");
 					return &empty;
 				}
 				c->r->oldfd = l;
@@ -142,7 +146,7 @@ struct cmd *parse(char *b) {
 		*b = '\0';
 		if (value) {
 			if (setenv(name, value, 1) == -1) {
-				note("Unable to set environment variable\r");
+				note("Unable to set environment variable");
 				return &empty;
 			}
 			value = name = NULL;
@@ -153,7 +157,7 @@ struct cmd *parse(char *b) {
 	case AND:
 	case PIPE:
 	case OR:
-		note("Expected another command\r");
+		note("Expected another command");
 		return &empty;
 	default:
 		break;

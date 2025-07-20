@@ -1,4 +1,5 @@
 #include <err.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -6,40 +7,55 @@
 #include "input.h"
 #include "options.h"
 
-int login, interactive;
+int login, interactive, argc;
 Input input;
+char **argv;
 
-void options(int *argcp, char ***argvp) {
+static void usage(char *program, int code) {
+	printf("Usage: %s [file] [-c string] [-hl]\n"
+	       "    <file> ...      Run script\n"
+	       "    -c <string> ... Run commands\n"
+	       "    -h              Show this help message\n"
+	       "    -l              Run as a login shell\n", program);
+	exit(code);
+}
+
+void options(void) {
 	int opt, l;
-	char *usage = "TODO: WRITE USAGE";
 
-	login = ***argvp == '-';
+	login = **argv == '-';
 	interactive = 1;
 	input = userinput;
 
-	while ((opt = getopt(*argcp, *argvp, ":c:hl")) != -1) switch (opt) {
-	case 'c':
-		interactive = 0;
-		input = stringinput;
-		string = optarg;
-		break;
-	case 'h':
-		errx(EXIT_SUCCESS, "%s", usage);
-	case 'l':
-		login = 1;
-		break;
-	case ':':
-		errx(EXIT_FAILURE, "Expected argument following `-%c'\n%s", optopt, usage);
-	case '?':
-	default:
-		errx(EXIT_FAILURE, "Unknown command line option `-%c'\n%s", optopt, usage);
+	while ((opt = getopt(argc, argv, ":c:hl")) != -1) {
+		switch (opt) {
+		case 'c':
+			interactive = 0;
+			input = stringinput;
+			string = optarg;
+			break;
+		case 'h':
+			usage(*argv, EXIT_SUCCESS);
+		case 'l':
+			login = 1;
+			break;
+		case ':':
+			warnx("Expected argument following `-%c'\n", optopt);
+			usage(*argv, EXIT_FAILURE);
+		case '?':
+		default:
+			warnx("Unknown command line option `-%c'\n", optopt);
+			usage(*argv, EXIT_FAILURE);
+		}
+		if (opt == 'c') break;
 	}
-	*argcp -= optind;
-	*argvp += optind;
-
-	if (!string && **argvp) {
+	if (!string && argv[optind]) {
 		interactive = 0;
 		input = scriptinput;
-		script = **argvp;
+		script = argv[optind];
+	}
+	if (!interactive) {
+		argc -= optind;
+		argv += optind;
 	}
 }

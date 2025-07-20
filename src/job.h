@@ -13,10 +13,11 @@ struct job {
 
 extern struct stack jobs;
 extern struct termios raw, canonical;
+extern struct sigaction sigchld, sigdfl, sigign;
 
 void *findjob(pid_t jobid);
 void *deletejob(void);
 int setconfig(struct termios *mode);
 int setfg(struct job job);
 int waitfg(struct job job);
-void waitbg(void);
+void sigchldhandler(int sig);

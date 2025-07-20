@@ -15,9 +15,7 @@
 #include "stack.h"
 #include "utils.h"
 
-#define PROMPT "> " // TODO: Have prompt be an environment variable
-
-enum character {
+enum {
 	CTRLC = '\003',
 	CTRLD,
 	BACKSPACE = '\010',
@@ -84,7 +82,7 @@ char *config(char *name) {
 	if (!origscript) {
 		origscript = script;
 		origstr = string;
-		script = prependhome(name);
+		script = catpath(home, name);
 	}
 
 	if (!(result = scriptinput())) {
@@ -96,23 +94,26 @@ char *config(char *name) {
 	return result;
 }
 
-static void waitbgsig(int sig) {
-	(void)sig;
-	waitbg();
+static size_t prompt(void) {
+	char *p;
+
+	if (!(p = getenv("PROMPT")) && setenv("PROMPT", p = DEFAULTPROMPT, 1) == -1)
+		note("Unable to update $PROMPT$ environment variable");
+	printf("%s ", p);
+	return strlen(p) + 1;
 }
 
 INPUT(userinput) {
 	char *cursor, *end;
+	size_t promptlen;
 	unsigned int c;
 	int i;
-
-	signal(SIGCHLD, waitbgsig); // TODO: Use sigaction for portability
 
 	end = cursor = buffer;
 	*history.t = *buffer = '\0';
 	history.c = history.t;
 	while (buffer == end) {
-		fputs(PROMPT, stdout);
+		promptlen = prompt();
 		while ((c = getchar()) != '\r') switch (c) {
 		default:
 			if (c >= ' ' && c <= '~') {
@@ -132,11 +133,10 @@ INPUT(userinput) {
 			return buffer;
 		case CTRLD:
 			puts("^D\r");
-			signal(SIGCHLD, SIG_DFL); // XXX
 			return NULL;
 		case CLEAR:
 			fputs("\033[H\033[J", stdout);
-			fputs(PROMPT, stdout);
+			prompt();
 			fputs(buffer, stdout);
 			continue;
 		case ESCAPE:
@@ -156,7 +156,7 @@ INPUT(userinput) {
 					if (history.c == (c == UP ? history.b : history.t)) continue;
 
 					putchar('\r');
-					for (i = end - buffer + strlen(PROMPT); i > 0; --i) putchar(' ');
+					for (i = end - buffer + promptlen; i > 0; --i) putchar(' ');
 					putchar('\r');
 
 					if (strcmp((char *)history.c, buffer) != 0)
@@ -165,7 +165,7 @@ INPUT(userinput) {
 					strcpy(buffer, (char *)history.c);
 					end = cursor = buffer + strlen(buffer);
 
-					fputs(PROMPT, stdout);
+					prompt();
 					fputs(buffer, stdout);
 					break;
 				case LEFT:
@@ -196,13 +196,10 @@ INPUT(userinput) {
 		}
 		puts("\r");
 	}
-	fpurge(stdout);
 	push(&history, buffer);
 
 	*end++ = ';';
 	*end = '\0';
-
-	signal(SIGCHLD, SIG_DFL); // XXX
 
 	return buffer;
 }

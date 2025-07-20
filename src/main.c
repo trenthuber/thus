@@ -7,8 +7,11 @@
 #include "run.h"
 #include "utils.h"
 
-int main(int argc, char **argv) {
-	options(&argc, &argv);
+int main(int localargc, char **localargv) {
+	argc = localargc;
+	argv = localargv;
+
+	options();
 
 	initialize();
 

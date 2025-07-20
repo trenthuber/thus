@@ -15,6 +15,8 @@
 static struct job jobarr[MAXJOBS + 1];
 INITSTACK(jobs, jobarr, 0);
 struct termios raw, canonical;
+struct sigaction sigchld, sigdfl, sigign;
+static int fgstatus;
 
 void *findjob(pid_t jobid) {
 	if (jobs.b == jobs.t) return NULL;
@@ -52,22 +54,12 @@ int setfg(struct job job) {
 }
 
 int waitfg(struct job job) {
-	int status, pgid, result;
+	while (waitpid(job.id, NULL, 0) != -1);
+	errno = 0;
 
-	do {
-		errno = 0;
-		waitpid(job.id, &status, WUNTRACED);
-	} while (errno == EINTR);
-	if (!errno && !WIFSTOPPED(status)) do {
-		errno = 0;
-		while (waitpid(-job.id, NULL, 0) != -1);
-	} while (errno == EINTR);
-	result = errno != ECHILD ? errno : 0;
-
-	// TODO: Use sigaction >:(
-	if ((pgid = getpgid(0)) == -1 || signal(SIGTTOU, SIG_IGN) == SIG_ERR
-	    || tcsetpgrp(STDIN_FILENO, pgid) == -1
-	    || signal(SIGTTOU, SIG_DFL) == SIG_ERR) {
+	if (sigaction(SIGTTOU, &sigign, NULL) == -1
+	    || tcsetpgrp(STDIN_FILENO, getpgrp()) == -1
+	    || sigaction(SIGTTOU, &sigdfl, NULL) == -1) {
 		note("Unable to reclaim foreground; terminating");
 		deinitialize();
 		exit(EXIT_FAILURE);
@@ -75,38 +67,34 @@ int waitfg(struct job job) {
 	if (tcgetattr(STDIN_FILENO, &job.config) == -1)
 		note("Unable to save termios config of job %d", job.id);
 	setconfig(&raw);
-	if (result) return result;
 
-	if (WIFSIGNALED(status)) {
-		result = WTERMSIG(status);
-		puts("\r");
-	} else if (WIFSTOPPED(status)) {
-		result = WSTOPSIG(status);
-		job.type = SUSPENDED;
-		if (push(&jobs, &job)) return result;
+	if (WIFEXITED(fgstatus)) return WEXITSTATUS(fgstatus);
+	else if (WIFSIGNALED(fgstatus)) return WTERMSIG(fgstatus);
+	job.type = SUSPENDED;
+	if (!push(&jobs, &job)) {
 		note("Unable to add job %d to list; too many jobs\r\n"
-			  "Press any key to continue", job.id);
+		     "Press any key to continue", job.id);
 		getchar();
 		if (setfg(job)) return waitfg(job);
 		note("Manual intervention required for job %d", job.id);
-	} else if (WIFEXITED(status)) result = WEXITSTATUS(status);
-
-	return result;
+	}
+	return WSTOPSIG(fgstatus);
 }
 
-void waitbg(void) {
+void sigchldhandler(int sig) {
 	int status;
 	pid_t id;
 
-	for (jobs.c = jobs.b; jobs.c != jobs.t; INC(jobs, c)) {
-		if (CURRENT->type != BACKGROUND) continue;
-		id = CURRENT->id;
-
-		// TODO: weird EINTR thing here too??
-		while ((id = waitpid(-id, &status, WNOHANG | WUNTRACED)) > 0)
+	(void)sig;
+	while ((id = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+		for (jobs.c = jobs.b; jobs.c != jobs.t; INC(jobs, c)) if (CURRENT->id == id) {
 			if (WIFSTOPPED(status)) CURRENT->type = SUSPENDED;
-
-		if (id == -1 && errno != ECHILD)
-			note("Unable to wait on some child processes");
+			else deletejob();
+			break;
+		}
+		if (jobs.c == jobs.t) {
+			fgstatus = status;
+			if (!WIFSTOPPED(fgstatus)) while (waitpid(-id, NULL, 0) != -1);
+		}
 	}
 }

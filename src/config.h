@@ -1,3 +1,5 @@
+#define DEFAULTPROMPT ">"
+
 #define HISTORYFILE ".ashhistory"
 #define INTERACTIVEFILE ".ashinteractive"
 #define LOGINFILE ".ashlogin"

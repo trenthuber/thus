@@ -6,33 +6,51 @@
 #include <sys/errno.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include "job.h"
 #include "stack.h"
 #include "term.h"
 #include "utils.h"
 
-#define BUILTINSIG(name) int name(char **tokens)
+#define BUILTINSIG(name) int name(int argc, char **argv)
 
 struct builtin {
 	char *name;
 	BUILTINSIG((*func));
 };
 
-BUILTINSIG(cd) { // TODO: Affect $PWD$ env var
-	if (!tokens[1]) return 1;
-	if (chdir(tokens[1]) != -1) return 0;
-	note("Unable to change directory to `%s'", tokens[1]);
-	return 1;
+BUILTINSIG(cd) {
+	char *fullpath;
+
+	if (argv[1]) {
+		if (!(fullpath = realpath(argv[1], NULL))) {
+			note("Could not resolve path name");
+			return 1;
+		}
+	} else fullpath = home;
+	if (chdir(fullpath) == -1) {
+		note("Unable to change directory to `%s'", argv[1]);
+		return 1;
+	}
+	if (setenv("PWD", fullpath, 1) == -1)
+		note("Unable to change $PWD$ to `%s'", fullpath);
+	if (fullpath != home) free(fullpath);
+	return 0;
 }
 
 BUILTINSIG(fg) {
 	long jobid;
 	struct job *job;
 
-	if (tokens[1]) {
+	if (sigaction(SIGCHLD, &sigdfl, NULL) == -1) {
+		note("Unable to acquire lock on the job stack");
+		return 1;
+	}
+
+	if (argv[1]) {
 		errno = 0;
-		if ((jobid = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno
+		if ((jobid = strtol(argv[1], NULL, 10)) == LONG_MAX && errno
 		    || jobid <= 0) {
 			note("Invalid process group id");
 			return 1;
@@ -46,6 +64,12 @@ BUILTINSIG(fg) {
 		note("No processes to bring into the foreground");
 		return 1;
 	}
+
+	if (sigaction(SIGCHLD, &sigchld, NULL) == -1) {
+		note("Unable to install SIGCHLD handler");
+		return 1;
+	}
+
 	if (!setfg(*job)) return 1;
 	waitfg(*job);
 
@@ -56,9 +80,14 @@ BUILTINSIG(bg) {
 	long jobid;
 	struct job *job;
 
-	if (tokens[1]) {
+	if (sigaction(SIGCHLD, &sigdfl, NULL) == -1) {
+		note("Unable to acquire lock on the job stack");
+		return 1;
+	}
+
+	if (argv[1]) {
 		errno = 0;
-		if ((jobid = strtol(tokens[1], NULL, 10)) == LONG_MAX && errno
+		if ((jobid = strtol(argv[1], NULL, 10)) == LONG_MAX && errno
 		    || jobid <= 0) {
 			note("Invalid job id");
 			return 1;
@@ -91,6 +120,11 @@ BUILTINSIG(bg) {
 	}
 	job->type = BACKGROUND;
 
+	if (sigaction(SIGCHLD, &sigchld, NULL) == -1) {
+		note("Unable to install SIGCHLD handler");
+		return 1;
+	}
+
 	return 0;
 }
 
@@ -104,25 +138,58 @@ struct builtin builtins[] = {
 	BUILTIN(NULL),
 };
 
+static int inpath(char *dir, char *filename) {
+	char *filepath;
+	struct stat estat;
+
+	if (stat(filepath = catpath(dir, filename), &estat) != -1) {
+		if (estat.st_mode & S_IXUSR) {
+			puts(filepath);
+			putchar('\r');
+			return 1;
+		}
+	} else if (errno != ENOENT) note("Unable to check if `%s' exists", filepath);
+	return 0;
+}
+
 BUILTINSIG(which) {
 	struct builtin *builtin;
+	char *path, *dir, *p;
 	
-	if (!tokens[1]) return 1;
+	if (!argv[1]) return 1;
 	for (builtin = builtins; builtin->func; ++builtin)
-		if (strcmp(tokens[1], builtin->name) == 0) {
-			puts("Built-in command");
+		if (strcmp(argv[1], builtin->name) == 0) {
+			puts("Built-in command\r");
 			return 0;
 		}
-	// TODO: Find command in PATH
+
+	if (!(path = getenv("PATH"))) {
+		note("Unable to examine $PATH$");
+		return 1;
+	}
+	if (!(path = p = strdup(path))) {
+		note("Unable to duplicate $PATH$");
+		return 1;
+	}
+	do {
+		if (!(dir = p)) break;
+		if ((p = strchr(dir, ':'))) *p++ = '\0';
+	} while (!inpath(dir, argv[1]));
+	free(path);
+	if (dir) return 0;
+
+	printf("%s not found\r\n", argv[1]);
 	return 1;
 }
 
 int isbuiltin(char **args, int *statusp) {
 	struct builtin *builtinp;
+	size_t n;
 
 	for (builtinp = builtins; builtinp->func; ++builtinp)
 		if (strcmp(*args, builtinp->name) == 0) {
-			*statusp = builtinp->func(args);
+			for (n = 0; args[n]; ++n);
+			*statusp = builtinp->func(n, args);
 			return 1;
 		}
 	return 0;
