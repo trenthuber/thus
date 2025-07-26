@@ -15,7 +15,7 @@ BUILTINSIG(fg) {
 
 	if (sigaction(SIGCHLD, &sigdfl, NULL) == -1) {
 		note("Unable to acquire lock on the job stack");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	if (argv[1]) {
@@ -23,25 +23,25 @@ BUILTINSIG(fg) {
 		if ((jobid = strtol(argv[1], NULL, 10)) == LONG_MAX && errno
 		    || jobid <= 0) {
 			note("Invalid process group id");
-			return 1;
+			return EXIT_FAILURE;
 		}
 		if (!(job = findjob((pid_t)jobid))) {
 			note("Unable to find process group %d", (pid_t)jobid);
-			return 1;
+			return EXIT_FAILURE;
 		}
 		job = deletejob();
 	} else if (!(job = pull(&jobs))) {
 		note("No processes to bring into the foreground");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
 	if (sigaction(SIGCHLD, &sigchld, NULL) == -1) {
 		note("Unable to install SIGCHLD handler");
-		return 1;
+		return EXIT_FAILURE;
 	}
 
-	if (!setfg(*job)) return 1;
+	if (!setfg(*job)) return EXIT_FAILURE;
 	waitfg(*job);
 
-	return 0;
+	return EXIT_SUCCESS;
 }

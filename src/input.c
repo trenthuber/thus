@@ -76,6 +76,7 @@ INPUT(scriptinput) {
 }
 
 char *config(char *name) {
+	int fd;
 	char *result;
 	static char *origscript, *origstr;
 
@@ -84,6 +85,11 @@ char *config(char *name) {
 		origstr = string;
 		script = catpath(home, name);
 	}
+
+	if ((fd = open(script, O_RDONLY | O_CREAT, 0644)) == -1)
+		fatal("Unable to open `%s'\n", script);
+	if (close(fd) == -1)
+		fatal("Unable to close `%s'", script);
 
 	if (!(result = scriptinput())) {
 		script = origscript;

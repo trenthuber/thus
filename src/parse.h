@@ -25,8 +25,7 @@ struct cmd {
 	struct redirect *r, rds[MAXRDS + 1];
 	enum terminator term;
 	int pipe[2];
+	struct cmd *prev, *next;
 };
-
-extern struct cmd empty;
 
 struct cmd *parse(char *b);

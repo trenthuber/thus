@@ -7,18 +7,21 @@
 BUILTINSIG(cd) {
 	char *fullpath;
 
-	if (argv[1]) {
-		if (!(fullpath = realpath(argv[1], NULL))) {
-			note("Could not resolve path name");
-			return 1;
-		}
-	} else fullpath = home;
+	if (!argv[1]) fullpath = home;
+	else if (!(fullpath = realpath(argv[1], NULL))) {
+		note("Could not resolve path name");
+		return EXIT_FAILURE;
+	}
+
 	if (chdir(fullpath) == -1) {
 		note("Unable to change directory to `%s'", argv[1]);
-		return 1;
+		return EXIT_FAILURE;
 	}
+
 	if (setenv("PWD", fullpath, 1) == -1)
 		note("Unable to change $PWD$ to `%s'", fullpath);
+
 	if (fullpath != home) free(fullpath);
-	return 0;
+
+	return EXIT_SUCCESS;
 }

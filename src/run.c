@@ -12,6 +12,8 @@
 #include "stack.h"
 #include "utils.h"
 
+int status;
+
 static int closepipe(struct cmd *cmd) {
 	int result;
 
@@ -52,24 +54,45 @@ static void redirectfiles(struct redirect *r) {
 	}
 }
 
+static void exec(struct cmd *cmd) {
+	char *cwd;
+
+	execvp(*cmd->args, cmd->args);
+	if (!(cwd = getcwd(NULL, 0)))
+		fatal("Unable to check current working directory");
+	execvP(*cmd->args, cwd, cmd->args);
+	free(cwd);
+	fatal("Couldn't find `%s' command", *cmd->args);
+}
+
 int run(struct cmd *cmd) {
-	struct cmd *prev;
 	int ispipe, ispipestart, ispipeend;
-	static int status;
 	pid_t cpid, jobid;
 	struct job job;
 
 	if (!cmd) return 0;
 
-	for (prev = &empty; cmd->args; prev = cmd++) {
-		ispipe = cmd->term == PIPE || prev->term == PIPE;
-		ispipestart = ispipe && prev->term != PIPE;
+	while ((cmd = cmd->next)) {
+		if (!cmd->args) {
+			if (!cmd->r->mode) break;
+			if ((cpid = fork()) == -1) {
+				note("Unable to create child process");
+				break;
+			} else if (cpid == 0) {
+				redirectfiles(cmd->r);
+				exit(EXIT_SUCCESS);
+			}
+			continue;
+		}
+
+		ispipe = cmd->term == PIPE || cmd->prev->term == PIPE;
+		ispipestart = ispipe && cmd->prev->term != PIPE;
 		ispipeend = ispipe && cmd->term != PIPE;
 
 		if (ispipe) {
 			if (!ispipeend && pipe(cmd->pipe) == -1) {
 				note("Unable to create pipe");
-				if (!ispipestart) closepipe(prev);
+				if (!ispipestart) closepipe(cmd->prev);
 				break;
 			}
 			if ((jobid = cpid = fork()) == -1) {
@@ -77,9 +100,9 @@ int run(struct cmd *cmd) {
 				break;
 			} else if (cpid == 0) {
 				if (!ispipestart) {
-					if (dup2(prev->pipe[0], 0) == -1)
-						fatal("Unable to duplicate read end of `%s' pipe", *prev->args);
-					if (!closepipe(prev)) exit(EXIT_FAILURE);
+					if (dup2(cmd->prev->pipe[0], 0) == -1)
+						fatal("Unable to duplicate read end of `%s' pipe", *cmd->prev->args);
+					if (!closepipe(cmd->prev)) exit(EXIT_FAILURE);
 				}
 				if (!ispipeend) {
 					if (dup2(cmd->pipe[1], 1) == -1)
@@ -88,49 +111,47 @@ int run(struct cmd *cmd) {
 				}
 
 				redirectfiles(cmd->rds);
-				if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
-				if (execvp(*cmd->args, cmd->args) == -1)
-					fatal("Couldn't find `%s' command", *cmd->args);
+				if (isbuiltin(cmd->args, &status)) exit(status);
+				exec(cmd);
 			}
 			if (!ispipestart) {
-				closepipe(prev);
+				closepipe(cmd->prev);
 				jobid = ((struct job *)(ispipeend ? pull : peek)(&jobs))->id;
 			}
-		} else {
-			if (cmd->rds->mode == END && isbuiltin(cmd->args, &status)) break;
-			if ((jobid = cpid = fork()) == -1) {
-				note("Unable to create child process");
-				break;
-			} else if (cpid == 0) {
-				redirectfiles(cmd->rds);
-				if (isbuiltin(cmd->args, &status)) exit(EXIT_SUCCESS);
-				if (execvp(*cmd->args, cmd->args) == -1)
-					fatal("Couldn't find `%s' command", *cmd->args);
-			}
-		}
-
-		if (setpgid(cpid, jobid) == -1) {
-			if (errno != ESRCH) {
-				note("Unable to set pgid of `%s' command to %d", *cmd->args, jobid);
-				if (kill(cpid, SIGKILL) == -1)
-					note("Unable to kill process %d; may need to manually terminate", cpid);
-			}
+		} else if (!cmd->rds->mode && isbuiltin(cmd->args, &status)) cpid = 0;
+		else if ((jobid = cpid = fork()) == -1) {
+			note("Unable to create child process");
 			break;
+		} else if (cpid == 0) {
+			redirectfiles(cmd->rds);
+			if (isbuiltin(cmd->args, &status)) exit(status);
+			exec(cmd);
 		}
-		job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
-		if (ispipestart || cmd->term == BG) {
-			if (!push(&jobs, &job)) {
-				note("Unable to add job to background; too many background jobs");
-				if (ispipestart) closepipe(cmd);
+
+		if (cpid) {
+			if (setpgid(cpid, jobid) == -1) {
+				if (errno != ESRCH) {
+					note("Unable to set pgid of `%s' command to %d", *cmd->args, jobid);
+					if (kill(cpid, SIGKILL) == -1)
+						note("Unable to kill process %d; may need to manually terminate", cpid);
+				}
 				break;
 			}
-		} else if (cmd->term != PIPE) {
-			if (!setfg(job)) break;
-			status = waitfg(job);
-
-			if (cmd->term == AND && status != 0) break;
-			if (cmd->term == OR && status == 0) break;
+			job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
+			if (ispipestart || cmd->term == BG) {
+				if (!push(&jobs, &job)) {
+					note("Unable to add job to background; too many background jobs");
+					if (ispipestart) closepipe(cmd);
+					break;
+				}
+			} else if (cmd->term != PIPE) {
+				if (!setfg(job)) break;
+				status = waitfg(job);
+			}
 		}
+
+		if (cmd->term == AND && status != EXIT_SUCCESS) break;
+		if (cmd->term == OR && status == EXIT_SUCCESS) break;
 	}
 
 	return 1;

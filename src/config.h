@@ -1,7 +1,7 @@
 #define DEFAULTPROMPT ">"
 
 #define HISTORYFILE ".ashhistory"
-#define INTERACTIVEFILE ".ashinteractive"
+#define INTFILE ".ashint"
 #define LOGINFILE ".ashlogin"
 
 #define MAXBUILTINS 100 // Maximum number of builtin commands

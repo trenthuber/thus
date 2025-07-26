@@ -16,7 +16,7 @@ int main(int localargc, char **localargv) {
 	initialize();
 
 	if (login) while (run(parse(config(LOGINFILE))));
-	if (interactive) while (run(parse(config(INTERACTIVEFILE))));
+	if (interactive) while (run(parse(config(INTFILE))));
 
 	while (run(parse(input())));
 
