@@ -5,7 +5,7 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include "builtins.h"
+#include "builtin.h"
 #include "config.h"
 #include "job.h"
 #include "parse.h"

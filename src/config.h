@@ -4,6 +4,7 @@
 #define INTERACTIVEFILE ".ashinteractive"
 #define LOGINFILE ".ashlogin"
 
+#define MAXBUILTINS 100 // Maximum number of builtin commands
 #define MAXCHARS 1000 // Maximum number of character per line
 #define MAXCMDS 100 // Maximum number of commands per line
 #define MAXHIST 100 // Maximum number of entries to store in history file
