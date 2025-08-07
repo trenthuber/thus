@@ -35,7 +35,7 @@ BUILTINSIG(bg) {
 		}
 	} else {
 		for (jobs.c = MINUSONE(jobs, t); jobs.c != MINUSONE(jobs, b); DEC(jobs, c))
-			if (CURRENT->type == SUSPENDED) break;
+			if (JOB->type == SUSPENDED) break;
 		if (jobs.c == MINUSONE(jobs, b)) {
 			note("No suspended jobs to run in background");
 			return EXIT_FAILURE;

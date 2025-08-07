@@ -4,11 +4,15 @@
 #include <sys/errno.h>
 #include <termios.h>
 #include <unistd.h>
+#include <limits.h>
+#include <stdio.h> // XXX
 
+#include "input.h"
+#include "shell.h"
+#include "alias.h"
 #include "builtin.h"
-#include "config.h"
 #include "job.h"
-#include "parse.h"
+#include "fg.h"
 #include "stack.h"
 #include "utils.h"
 
@@ -55,23 +59,25 @@ static void redirectfiles(struct redirect *r) {
 }
 
 static void exec(struct cmd *cmd) {
-	char *cwd;
+	char cwd[PATH_MAX];
 
 	execvp(*cmd->args, cmd->args);
-	if (!(cwd = getcwd(NULL, 0)))
-		fatal("Unable to check current working directory");
+	if (!getcwd(cwd, PATH_MAX)) fatal("Unable to check current working directory");
 	execvP(*cmd->args, cwd, cmd->args);
-	free(cwd);
 	fatal("Couldn't find `%s' command", *cmd->args);
 }
 
-int run(struct cmd *cmd) {
+int run(struct shell *shell) {
+	struct cmd *cmd;
 	int ispipe, ispipestart, ispipeend;
 	pid_t cpid, jobid;
 	struct job job;
 
-	if (!cmd) return 0;
+	if (!shell) return 0;
 
+	applyaliases(shell);
+
+	cmd = shell->cmds;
 	while ((cmd = cmd->next)) {
 		if (!cmd->args) {
 			if (!cmd->r->mode) break;

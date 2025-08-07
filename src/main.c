@@ -1,24 +1,25 @@
 #include <stdlib.h>
 
-#include "config.h"
 #include "input.h"
+#include "shell.h"
 #include "options.h"
 #include "parse.h"
 #include "run.h"
 #include "utils.h"
+#include "source.h"
 
-int main(int localargc, char **localargv) {
-	argc = localargc;
-	argv = localargv;
+int main(int c, char **v) {
+	argc = c;
+	argv = v;
 
 	options();
 
 	initialize();
 
-	if (login) while (run(parse(config(LOGINFILE))));
-	if (interactive) while (run(parse(config(INTFILE))));
+	if (login) config(".ashlogin");
+	if (interactive) config(".ashint");
 
-	while (run(parse(input())));
+	while (run(parse(shell.input(&shell))));
 
 	deinitialize();
 

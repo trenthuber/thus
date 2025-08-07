@@ -3,15 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "config.h"
 #include "input.h"
+#include "shell.h"
 #include "options.h"
-#include "parse.h"
 #include "run.h"
 #include "utils.h"
-
-static char *tokens[MAXCHARS + 1];
-static struct cmd cmds[MAXCMDS + 1];
 
 static void initcmd(struct cmd *cmd) {
 	cmd->args = NULL;
@@ -21,18 +17,19 @@ static void initcmd(struct cmd *cmd) {
 	cmd->next = NULL;
 }
 
-struct cmd *parse(char *b) {
-	char **t, *name, *value, *stlend, *p, *end, *env;
+struct shell *parse(struct shell *shell) {
+	char *b, **t, *name, *value, *stlend, *p, *end, *env;
 	struct cmd *c;
 	long l;
 	int e, offset;
 	
-	if (!b) return NULL;
-	t = tokens;
-	c = cmds;
-	c->next = c + 1;
-	value = name = NULL;
-	for (initcmd(++c); *b; ++b) switch (*b) {
+	if (!shell) return NULL;
+	b = shell->buffer;
+	t = shell->tokens;
+	c = shell->cmds + 1;
+	shell->cmds->next = NULL;
+	*t = value = name = NULL;
+	for (initcmd(c); *b; ++b) switch (*b) {
 	default:
 		if (c->r->mode) break;
 		if (!c->args) c->args = t;
@@ -44,14 +41,14 @@ struct cmd *parse(char *b) {
 	case '>':
 		if (c->r->mode) {
 			note("File redirections should be separated by spaces");
-			return c;
+			return shell;
 		}
 		c->r->newfd = *b == '>';
 		if (*(b - 1)) {
 			if (c->args == --t) c->args = NULL;
 			if ((l = strtol(*t, &stlend, 10)) < 0 || l > INT_MAX || stlend != b) {
 				note("Invalid value for a file redirection");
-				return c;
+				return shell;
 			}
 			c->r->newfd = l;
 		}
@@ -73,7 +70,7 @@ struct cmd *parse(char *b) {
 		}
 		if (!b) {
 			note("Quote left open-ended");
-			return c;
+			return shell;
 		}
 		memmove(p, p + 1, end-- - p);
 		--b;
@@ -112,7 +109,7 @@ struct cmd *parse(char *b) {
 		while (*b && *b != '$') ++b;
 		if (!*b) {
 			note("Environment variable lacks a terminating `$'");
-			return c;
+			return shell;
 		}
 		*b++ = '\0';
 		for (end = b; *end; ++end);
@@ -122,11 +119,11 @@ struct cmd *parse(char *b) {
 		else if (strcmp(p + 1, "?") == 0) {
 			if (!sprintf(env = (char [12]){0}, "%d", status)) {
 				note("Unable to get previous command status");
-				return c;
+				return shell;
 			}
 		} else if ((env = getenv(p + 1)) == NULL) {
 			note("Environment variable does not exist");
-			return c;
+			return shell;
 		}
 
 		e = strlen(env);
@@ -162,7 +159,7 @@ struct cmd *parse(char *b) {
 				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0
 				    || l > INT_MAX || *stlend) {
 					note("Incorrect syntax for file redirection");
-					return c;
+					return shell;
 				}
 				c->r->oldfd = l;
 				c->r->oldname = NULL;
@@ -178,7 +175,7 @@ struct cmd *parse(char *b) {
 		if (value) {
 			if (setenv(name, value, 1) == -1) {
 				note("Unable to set environment variable");
-				return c;
+				return shell;
 			}
 			value = name = NULL;
 		}
@@ -191,10 +188,11 @@ struct cmd *parse(char *b) {
 	case PIPE:
 	case OR:
 		note("Expected another command");
-		return c;
+		return shell;
 	default:
 		break;
 	}
 
-	return cmds;
+	shell->cmds->next = shell->cmds + 1;
+	return shell;
 }

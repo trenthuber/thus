@@ -1,27 +1,25 @@
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+#include <limits.h>
 
 #include "builtin.h"
 #include "utils.h"
 
 BUILTINSIG(cd) {
-	char *fullpath;
+	char *path;
 
-	if (!argv[1]) fullpath = home;
-	else if (!(fullpath = realpath(argv[1], NULL))) {
-		note("Could not resolve path name");
+	path = argc == 1 ? home : argv[1];
+
+	if (chdir(path) == -1) {
+		note("Unable to change directory to `%s'", path);
 		return EXIT_FAILURE;
 	}
 
-	if (chdir(fullpath) == -1) {
-		note("Unable to change directory to `%s'", argv[1]);
+	if (setenv("PWD", path, 1) == -1) {
+		note("Unable to change $PWD$ to `%s'", path);
 		return EXIT_FAILURE;
 	}
-
-	if (setenv("PWD", fullpath, 1) == -1)
-		note("Unable to change $PWD$ to `%s'", fullpath);
-
-	if (fullpath != home) free(fullpath);
 
 	return EXIT_SUCCESS;
 }

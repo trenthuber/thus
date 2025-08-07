@@ -1,26 +1,40 @@
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+#include <limits.h>
 #include <sys/errno.h>
 
-#include "config.h"
 #include "input.h"
+#include "shell.h"
 #include "stack.h"
 #include "utils.h"
 
-static char historyarr[MAXHIST + 1][MAXCHARS + 1];
+#define HISTORYFILE ".ashhistory"
+#define MAXHIST 100
+#define BUFFER ((char *)history.t)
+
+static char historyarr[MAXHIST + 1][MAXCHARS + 1], filepath[PATH_MAX];
 INITSTACK(history, historyarr, 1);
 
-void readhistory(void) {
-	FILE *file;
+/* TODO
+	void addhistory(char *buffer);
+	int prevhistory(char *buffer);
+	int nexthistory(char *buffer);
+*/
 
-	if (!(file = fopen(catpath(home, HISTORYFILE), "r"))) {
+void readhistory(void) {
+	char *p;
+	FILE *file;
+	
+	if (!catpath(home, HISTORYFILE, filepath)) exit(EXIT_FAILURE);
+	if (!(file = fopen(filepath, "r"))) {
 		if (errno == ENOENT) return;
 		fatal("Unable to open history file for reading");
 	}
-	while (fgets(buffer, history.size, file)) {
-		*(buffer + strlen(buffer) - 1) = '\0';
-		push(&history, buffer);
+	while (fgets(BUFFER, history.size, file)) {
+		*(BUFFER + strlen(BUFFER) - 1) = '\0';
+		push(&history, BUFFER);
 	}
 	if (ferror(file) || !feof(file))
 		fatal("Unable to read from history file");
@@ -28,9 +42,10 @@ void readhistory(void) {
 }
 
 void writehistory(void) {
+	char *filename;
 	FILE *file;
 
-	if (!(file = fopen(catpath(home, HISTORYFILE), "w"))) {
+	if (!(file = fopen(filepath, "w"))) {
 		note("Unable to open history file for writing");
 		return;
 	}

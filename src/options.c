@@ -3,13 +3,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "config.h"
 #include "input.h"
-#include "options.h"
+#include "shell.h"
 
 int login, interactive, argc;
-Input input;
 char **argv;
+
+struct shell shell;
 
 static void usage(char *program, int code) {
 	printf("Usage: %s [file] [-c string] [-hl]\n"
@@ -25,14 +25,14 @@ void options(void) {
 
 	login = **argv == '-';
 	interactive = 1;
-	input = userinput;
+	shell.input = userinput;
 
 	while ((opt = getopt(argc, argv, ":c:hl")) != -1) {
 		switch (opt) {
 		case 'c':
 			interactive = 0;
-			input = stringinput;
-			string = optarg;
+			shell.string = optarg;
+			shell.input = stringinput;
 			break;
 		case 'h':
 			usage(*argv, EXIT_SUCCESS);
@@ -49,10 +49,10 @@ void options(void) {
 		}
 		if (opt == 'c') break;
 	}
-	if (!string && argv[optind]) {
+	if (!shell.string && argv[optind]) {
 		interactive = 0;
-		input = scriptinput;
-		script = argv[optind];
+		shell.script = argv[optind];
+		shell.input = scriptinput;
 	}
 	if (!interactive) {
 		argc -= optind;

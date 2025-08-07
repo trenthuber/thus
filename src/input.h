@@ -1,8 +1,8 @@
-#define INPUT(name) char *name(void)
+#define INPUT(name) struct shell *name(struct shell *shell)
 
-extern char *string, buffer[MAXCHARS + 2], *script;
+typedef INPUT((*Input));
 
 INPUT(stringinput);
 INPUT(scriptinput);
-char *config(char *name);
+// struct shell *config(char *name);
 INPUT(userinput);

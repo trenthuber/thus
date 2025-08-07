@@ -1,19 +1,19 @@
 #include <fcntl.h>
-#include <signal.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <termios.h>
 #include <unistd.h>
 
-#include "config.h"
-#include "history.h"
 #include "input.h"
-#include "job.h"
+#include "shell.h"
+#include "history.h"
 #include "stack.h"
 #include "utils.h"
+
+#define DEFAULTPROMPT ">"
 
 enum {
 	CTRLC = '\003',
@@ -31,73 +31,65 @@ enum {
 	DEL = '\177',
 };
 
-char *string, buffer[MAXCHARS + 2], *script;
-
 INPUT(stringinput) {
 	char *start;
 	size_t l;
 
-	if (!*string) return NULL;
-	start = string;
-	while (*string && *string != '\n') ++string;
-	l = string - start;
-	if (*string == '\n') ++string;
+	if (!*shell->string) {
+		if (shell->script && munmap(shell->map.m, shell->map.l) == -1)
+			note("Unable to unmap memory associated with `%s'", shell->script);
+		return NULL;
+	}
+	start = shell->string;
+	while (*shell->string && *shell->string != '\n') ++shell->string;
+	l = shell->string - start;
+	if (*shell->string == '\n') ++shell->string;
+// puts("test\r\n");
 	if (l > MAXCHARS) fatal("Line too long, exceeds %d character limit", MAXCHARS);
-	strncpy(buffer, start, l);
-	buffer[l] = ';';
-	buffer[l + 1] = '\0';
+	strncpy(shell->buffer, start, l);
+	shell->buffer[l] = ';';
+	shell->buffer[l + 1] = '\0';
 
-	return buffer;
+	return shell;
 }
 
 INPUT(scriptinput) {
 	int fd;
 	struct stat sstat;
-	char *result;
-	static char *map;
-	static size_t l;
 
-	if (!map) {
-		if ((fd = open(script, O_RDONLY)) == -1) fatal("Unable to open `%s'", script);
-		if (stat(script, &sstat) == -1) fatal("Unable to stat `%s'", script);
-		if ((l = sstat.st_size) == 0) return NULL;
-		if ((map = string = mmap(NULL, l, PROT_READ, MAP_PRIVATE, fd, 0))
-			== MAP_FAILED)
-			fatal("Unable to memory map `%s'", script);
-		if (close(fd) == -1) fatal("Unable to close `%s'", script);
-	}
+	if ((fd = open(shell->script, O_RDONLY)) == -1)
+		fatal("Unable to open `%s'", shell->script);
+	if (stat(shell->script, &sstat) == -1)
+		fatal("Unable to stat `%s'", shell->script);
+	if ((shell->map.l = sstat.st_size) == 0) return NULL;
+	if ((shell->string = shell->map.m = mmap(NULL, shell->map.l, PROT_READ, MAP_PRIVATE, fd, 0)) == MAP_FAILED)
+		fatal("Unable to memory map `%s'", shell->script);
+	if (close(fd) == -1) fatal("Unable to close `%s'", shell->script);
+	shell->input = stringinput;
 
-	if (!(result = stringinput())) {
-		if (munmap(map, l) == -1) fatal("Unable to unmap %s from memory", script);
-		map = NULL;
-	}
-
-	return result;
+	return shell->input(shell);
 }
 
-char *config(char *name) {
+static struct shell *config(char *name) {
 	int fd;
-	char *result;
-	static char *origscript, *origstr;
+	struct shell *result;
+	static struct shell shell;
+	static char path[PATH_MAX];
 
-	if (!origscript) {
-		origscript = script;
-		origstr = string;
-		script = catpath(home, name);
+	if (!shell.script) {
+		shell.script = catpath(home, name, path);
+		shell.input = scriptinput;
+
+		if ((fd = open(shell.script, O_RDONLY | O_CREAT, 0644)) == -1)
+			fatal("Unable to open `%s'", shell.script);
+		if (close(fd) == -1)
+			fatal("Unable to close `%s'", shell.script);
 	}
 
-	if ((fd = open(script, O_RDONLY | O_CREAT, 0644)) == -1)
-		fatal("Unable to open `%s'\n", script);
-	if (close(fd) == -1)
-		fatal("Unable to close `%s'", script);
-
-	if (!(result = scriptinput())) {
-		script = origscript;
-		string = origstr;
-		origscript = NULL;
-	}
-
-	return result;
+	result = shell.input(&shell);
+	if (result) return result;
+	shell.script = NULL;
+	return NULL;
 }
 
 static size_t prompt(void) {
@@ -110,20 +102,20 @@ static size_t prompt(void) {
 }
 
 INPUT(userinput) {
-	char *cursor, *end;
+	char *start, *cursor, *end;
 	size_t promptlen;
 	unsigned int c;
 	int i;
 
-	end = cursor = buffer;
-	*history.t = *buffer = '\0';
+	end = cursor = start = shell->buffer;
+	*history.t = *start = '\0';
 	history.c = history.t;
-	while (buffer == end) {
+	while (start == end) {
 		promptlen = prompt();
 		while ((c = getchar()) != '\r') switch (c) {
 		default:
 			if (c >= ' ' && c <= '~') {
-				if (end - buffer == MAXCHARS) continue;
+				if (end - start == MAXCHARS) continue;
 				memmove(cursor + 1, cursor, end - cursor);
 				*cursor++ = c;
 				*++end = '\0';
@@ -135,15 +127,15 @@ INPUT(userinput) {
 			break;
 		case CTRLC:
 			puts("^C\r");
-			*buffer = '\0';
-			return buffer;
+			*start = '\0';
+			return shell;
 		case CTRLD:
 			puts("^D\r");
 			return NULL;
 		case CLEAR:
 			fputs("\033[H\033[J", stdout);
 			prompt();
-			fputs(buffer, stdout);
+			fputs(start, stdout);
 			continue;
 		case ESCAPE:
 			switch ((c = getchar())) {
@@ -152,8 +144,8 @@ INPUT(userinput) {
 				while (cursor != end && *cursor == ' ') putchar(*cursor++);
 				break;
 			case BACKWARD:
-				while (cursor != buffer && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
-				while (cursor != buffer && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
+				while (cursor != start && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
+				while (cursor != start && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
 				break;
 			case ARROW:
 				switch ((c = getchar())) {
@@ -162,20 +154,20 @@ INPUT(userinput) {
 					if (history.c == (c == UP ? history.b : history.t)) continue;
 
 					putchar('\r');
-					for (i = end - buffer + promptlen; i > 0; --i) putchar(' ');
+					for (i = end - start + promptlen; i > 0; --i) putchar(' ');
 					putchar('\r');
 
-					if (strcmp((char *)history.c, buffer) != 0)
-						strcpy((char *)history.t, buffer);
+					if (strcmp((char *)history.c, start) != 0)
+						strcpy((char *)history.t, start);
 					if (c == UP) DEC(history, c); else INC(history, c);
-					strcpy(buffer, (char *)history.c);
-					end = cursor = buffer + strlen(buffer);
+					strcpy(start, (char *)history.c);
+					end = cursor = start + strlen(start);
 
 					prompt();
-					fputs(buffer, stdout);
+					fputs(start, stdout);
 					break;
 				case LEFT:
-					if (cursor > buffer) putchar((--cursor, '\b'));
+					if (cursor > start) putchar((--cursor, '\b'));
 					break;
 				case RIGHT:
 					if (cursor < end) putchar(*cursor++);
@@ -188,7 +180,7 @@ INPUT(userinput) {
 			break;
 		case BACKSPACE:
 		case DEL:
-			if (cursor == buffer) continue;
+			if (cursor == start) continue;
 			memmove(cursor - 1, cursor, end - cursor);
 			--cursor;
 			*--end = '\0';
@@ -202,10 +194,10 @@ INPUT(userinput) {
 		}
 		puts("\r");
 	}
-	push(&history, buffer);
+	push(&history, start);
 
 	*end++ = ';';
 	*end = '\0';
 
-	return buffer;
+	return shell;
 }

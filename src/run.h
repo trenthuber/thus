@@ -1,3 +1,3 @@
 extern int status;
 
-int run(struct cmd *cmd);
+int run(struct shell *shell);

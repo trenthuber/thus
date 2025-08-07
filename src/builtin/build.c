@@ -6,7 +6,8 @@
 
 #include "../../external/cbs/cbs.c"
 #include "../../external/cbsfile.c"
-#include "../config.h"
+
+#define MAXBUILTINS 50
 
 int main(void) {
 	int listfd, l;
@@ -23,7 +24,7 @@ int main(void) {
 	if (!(dir = opendir("./")))
 		err(EXIT_FAILURE, "Unable to open current directory");
 
-	dprintf(listfd, "#include <stdlib.h>\n\n#include \"builtin.h\"\n"
+	dprintf(listfd, "#include <stddef.h>\n\n#include \"builtin.h\"\n"
 	        "#include \"list.h\"\n\n");
 
 	errno = i = 0;
@@ -35,7 +36,8 @@ int main(void) {
 		if (!(name = strrchr(entry->d_name, '.')) || strcmp(name, ".c") != 0)
 			continue;
 		if (i == 1 + MAXBUILTINS + 1)
-			errx(EXIT_FAILURE, "Maximum allowed builtins (%d) exceeded", MAXBUILTINS);
+			errx(EXIT_FAILURE, "Unable to add built-in `%s', maximum reached (%d)",
+			     name, MAXBUILTINS);
 		if (!(name = strdup(entry->d_name)))
 			err(EXIT_FAILURE, "Unable to duplicate directory entry");
 		name[strlen(name) - strlen(".c")] = '\0';

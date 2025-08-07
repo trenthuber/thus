@@ -1,6 +1,8 @@
 #include "../external/cbs/cbs.c"
 #include "../external/cbsfile.c"
 
+#define BUILTINS LIST("-Ibuiltin/")
+
 int main(void) {
 	build("./");
 
@@ -8,13 +10,13 @@ int main(void) {
 
 	buildfiles((struct cbsfile []){{"../bin/ash", NONE, 'x'},
 
-	                               {"input", NONE},
 	                               {"history", NONE},
+	                               {"input", NONE},
 	                               {"job", NONE},
-	                               {"parse", NONE},
-	                               {"main", NONE},
+	                               {"main", BUILTINS},
 	                               {"options", NONE},
-	                               {"run", LIST("-Ibuiltin/")},
+	                               {"parse", NONE},
+	                               {"run", BUILTINS},
 	                               {"stack", NONE},
 	                               {"utils", NONE},
 

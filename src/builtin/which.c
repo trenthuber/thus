@@ -1,54 +1,56 @@
-#include <stdlib.h>
 #include <stdio.h>
-#include <sys/stat.h>
-#include <sys/errno.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/errno.h>
+#include <sys/stat.h>
+#include <limits.h>
 
 #include "builtin.h"
 #include "list.h"
 #include "utils.h"
 
-static int inpath(char *dir, char *filename) {
-	char *filepath;
-	struct stat estat;
-
-	if (stat(filepath = catpath(dir, filename), &estat) != -1) {
-		if (estat.st_mode & S_IXUSR) {
-			puts(filepath);
-			putchar('\r');
-			return 1;
-		}
-	} else if (errno != ENOENT) note("Unable to check if `%s' exists", filepath);
-
-	return 0;
-}
-
 BUILTINSIG(which) {
+	int result;
+	size_t i, l;
 	struct builtin *builtin;
-	char *path, *dir, *p;
+	char *entry, *end, dir[PATH_MAX], path[PATH_MAX];
+	struct stat pstat;
 	
-	if (!argv[1]) return EXIT_FAILURE;
-	for (builtin = builtins; builtin->func; ++builtin)
-		if (strcmp(argv[1], builtin->name) == 0) {
-			printf("%s is built-in\r\n", argv[1]);
-			return EXIT_SUCCESS;
+	if (argc == 1) return EXIT_FAILURE;
+
+	result = EXIT_SUCCESS;
+	for (i = 1; argv[i]; ++i) {
+		for (builtin = builtins; builtin->func; ++builtin)
+			if (strcmp(argv[i], builtin->name) == 0) {
+				printf("%s is built-in\r\n", argv[i]);
+				break;
+			}
+		if (builtin->func) continue;
+
+		if (!(entry = getenv("PATH"))) {
+			note("Unable to examine $PATH$");
+			return EXIT_FAILURE;
 		}
+		for (end = entry; end; entry = end + 1) {
+			l = (end = strchr(entry, ':')) ? end - entry : strlen(entry);
+			strncpy(dir, entry, l);
+			dir[l] = '\0';
+			if (!catpath(dir, argv[i], path)) return EXIT_FAILURE;
+			if (stat(path, &pstat) != -1) {
+				if (pstat.st_mode & S_IXUSR) {
+					printf("%s\r\n", path);
+					break;
+				}
+			} else if (errno != ENOENT) {
+				note("Unable to check if `%s' exists", path);
+				return EXIT_FAILURE;
+			}
+		}
+		if (entry != end + 1) continue;
 
-	if (!(path = getenv("PATH"))) {
-		note("Unable to examine $PATH$");
-		return EXIT_FAILURE;
+		printf("%s not found\r\n", argv[i]);
+		result = EXIT_FAILURE;
 	}
-	if (!(path = p = strdup(path))) {
-		note("Unable to duplicate $PATH$");
-		return EXIT_FAILURE;
-	}
-	do {
-		if (!(dir = p)) break;
-		if ((p = strchr(dir, ':'))) *p++ = '\0';
-	} while (!inpath(dir, argv[1]));
-	free(path);
-	if (dir) return EXIT_SUCCESS;
 
-	printf("%s not found\r\n", argv[1]);
-	return EXIT_FAILURE;
+	return result;
 }
