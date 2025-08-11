@@ -1,3 +1,3 @@
 extern int status;
 
-int run(struct shell *shell);
+int run(struct context *context);

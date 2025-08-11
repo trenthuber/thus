@@ -1,23 +1,27 @@
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <limits.h>
 
+#include "builtin.h"
 #include "input.h"
-#include "shell.h"
+#include "context.h"
 #include "parse.h"
 #include "run.h"
 #include "utils.h"
-#include "builtin.h"
 
 BUILTINSIG(source) {
-	struct shell shell;
+	struct context context;
 
-	shell.script = argv[1];
-	shell.input = scriptinput;
+	if (argc != 2) {
+		note("Usage: source file");
+		return EXIT_FAILURE;
+	}
 
-	while (run(parse(shell.input(&shell))));
+	context.script = argv[1];
+	context.input = scriptinput;
+	while (run(parse(context.input(&context))));
 
-	return EXIT_SUCCESS; // TODO: Handle exit status
+	return EXIT_SUCCESS;
 }
 
 void config(char *name) {

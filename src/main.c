@@ -1,12 +1,12 @@
 #include <stdlib.h>
 
 #include "input.h"
-#include "shell.h"
+#include "context.h"
 #include "options.h"
 #include "parse.h"
 #include "run.h"
-#include "utils.h"
 #include "source.h"
+#include "utils.h"
 
 int main(int c, char **v) {
 	argc = c;
@@ -19,7 +19,7 @@ int main(int c, char **v) {
 	if (login) config(".ashlogin");
 	if (interactive) config(".ashint");
 
-	while (run(parse(shell.input(&shell))));
+	while (run(parse(context.input(&context))));
 
 	deinitialize();
 

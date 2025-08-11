@@ -4,9 +4,8 @@
 #include <string.h>
 
 #include "input.h"
-#include "shell.h"
+#include "context.h"
 #include "options.h"
-#include "run.h"
 #include "utils.h"
 
 static void initcmd(struct cmd *cmd) {
@@ -17,17 +16,17 @@ static void initcmd(struct cmd *cmd) {
 	cmd->next = NULL;
 }
 
-struct shell *parse(struct shell *shell) {
+struct context *parse(struct context *context) {
 	char *b, **t, *name, *value, *stlend, *p, *end, *env;
 	struct cmd *c;
 	long l;
 	int e, offset;
 	
-	if (!shell) return NULL;
-	b = shell->buffer;
-	t = shell->tokens;
-	c = shell->cmds + 1;
-	shell->cmds->next = NULL;
+	if (!context) return NULL;
+	b = context->buffer;
+	t = context->tokens;
+	c = context->cmds + 1;
+	context->cmds->next = NULL;
 	*t = value = name = NULL;
 	for (initcmd(c); *b; ++b) switch (*b) {
 	default:
@@ -41,14 +40,14 @@ struct shell *parse(struct shell *shell) {
 	case '>':
 		if (c->r->mode) {
 			note("File redirections should be separated by spaces");
-			return shell;
+			return context;
 		}
 		c->r->newfd = *b == '>';
 		if (*(b - 1)) {
 			if (c->args == --t) c->args = NULL;
 			if ((l = strtol(*t, &stlend, 10)) < 0 || l > INT_MAX || stlend != b) {
 				note("Invalid value for a file redirection");
-				return shell;
+				return context;
 			}
 			c->r->newfd = l;
 		}
@@ -70,7 +69,7 @@ struct shell *parse(struct shell *shell) {
 		}
 		if (!b) {
 			note("Quote left open-ended");
-			return shell;
+			return context;
 		}
 		memmove(p, p + 1, end-- - p);
 		--b;
@@ -109,21 +108,21 @@ struct shell *parse(struct shell *shell) {
 		while (*b && *b != '$') ++b;
 		if (!*b) {
 			note("Environment variable lacks a terminating `$'");
-			return shell;
+			return context;
 		}
 		*b++ = '\0';
 		for (end = b; *end; ++end);
 
 		l = strtol(p + 1, &stlend, 10);
 		if (stlend == b - 1) env = l >= 0 && l < argc ? argv[l] : b - 1;
-		else if (strcmp(p + 1, "?") == 0) {
+		else if (strcmp(p + 1, "^") == 0) {
 			if (!sprintf(env = (char [12]){0}, "%d", status)) {
 				note("Unable to get previous command status");
-				return shell;
+				return context;
 			}
 		} else if ((env = getenv(p + 1)) == NULL) {
 			note("Environment variable does not exist");
-			return shell;
+			return context;
 		}
 
 		e = strlen(env);
@@ -159,7 +158,7 @@ struct shell *parse(struct shell *shell) {
 				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0
 				    || l > INT_MAX || *stlend) {
 					note("Incorrect syntax for file redirection");
-					return shell;
+					return context;
 				}
 				c->r->oldfd = l;
 				c->r->oldname = NULL;
@@ -175,7 +174,7 @@ struct shell *parse(struct shell *shell) {
 		if (value) {
 			if (setenv(name, value, 1) == -1) {
 				note("Unable to set environment variable");
-				return shell;
+				return context;
 			}
 			value = name = NULL;
 		}
@@ -188,11 +187,11 @@ struct shell *parse(struct shell *shell) {
 	case PIPE:
 	case OR:
 		note("Expected another command");
-		return shell;
+		return context;
 	default:
 		break;
 	}
 
-	shell->cmds->next = shell->cmds + 1;
-	return shell;
+	context->cmds->next = context->cmds + 1;
+	return context;
 }

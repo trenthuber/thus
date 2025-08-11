@@ -1,6 +1,5 @@
 #include <err.h>
 #include <limits.h>
-#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,14 +9,12 @@
 #include <unistd.h>
 
 #include "history.h"
-#include "input.h"
 #include "job.h"
+#include "fg.h"
 #include "options.h"
-#include "stack.h"
 
-struct termios raw, canonical;
-struct sigaction sigchld, sigdfl, sigign;
 char *home;
+int status;
 
 void note(char *fmt, ...) {
 	va_list args;
@@ -37,47 +34,11 @@ void fatal(char *fmt, ...) {
 	exit(EXIT_FAILURE);
 }
 
-int setconfig(struct termios *mode) {
-	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
-		note("Unable to set termios config");
-		return 0;
-	}
-	return 1;
-}
-
-static void sigchldhandler(int sig) {
-	int status;
-	pid_t id;
-
-	(void)sig;
-	while ((id = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
-		for (jobs.c = jobs.b; jobs.c != jobs.t; INC(jobs, c))
-			if (JOB->id == id) {
-				if (WIFSTOPPED(status)) JOB->type = SUSPENDED;
-				else deletejob();
-				break;
-			}
-		if (jobs.c == jobs.t) {
-			fgstatus = status;
-			if (!WIFSTOPPED(fgstatus)) while (waitpid(-id, NULL, 0) != -1);
-		}
-	}
-}
-
 void initialize(void) {
 	char *shlvlstr, buffer[19 + 1];
 	long shlvl;
 
-	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
-		err(EXIT_FAILURE, "Unable to get default termios config");
-	cfmakeraw(&raw);
-	if (!setconfig(&raw)) exit(EXIT_FAILURE);
-
-	sigchld.sa_handler = sigchldhandler;
-	sigdfl.sa_handler = SIG_DFL;
-	sigign.sa_handler = SIG_IGN;
-	if (sigaction(SIGCHLD, &sigchld, NULL) == -1)
-		fatal("Unable to install SIGCHLD handler");
+	initterm();
 
 	if (!(home = getenv("HOME")))
 		fatal("Unable to locate user's home directory, $HOME$ not set");
@@ -89,6 +50,7 @@ void initialize(void) {
 		note("Unable to update $SHLVL$ environment variable");
 
 	if (interactive) readhistory();
+	initjobs();
 }
 
 char *catpath(char *dir, char *filename, char *buffer) {
@@ -108,7 +70,7 @@ char *catpath(char *dir, char *filename, char *buffer) {
 }
 
 void deinitialize(void) {
-	if (interactive) writehistory();
+	deinitterm();
 
-	setconfig(&canonical);
+	if (interactive) writehistory();
 }

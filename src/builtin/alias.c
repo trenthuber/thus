@@ -1,31 +1,30 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 #include "builtin.h"
-#include "utils.h"
-#include "stack.h"
 #include "input.h"
-#include "shell.h"
+#include "context.h"
 #include "parse.h"
+#include "utils.h"
 
 #define MAXALIAS 25
-#define ALIAS ((struct alias *)aliases.c)
 
-struct alias {
-	char lhs[MAXCHARS - 5], *rhs;
-	struct shell shell;
-};
+static struct {
+	struct {
+		char lhs[MAXCHARS - 5], *rhs;
+		struct context context;
+	} entries[MAXALIAS + 1];
+	size_t size;
+} aliases;
 
-static struct alias aliasarr[MAXALIAS + 1];
-static INITSTACK(aliases, aliasarr, 0);
-
-void applyaliases(struct shell *shell) {
-	struct cmd *cmd, *p;
+void applyaliases(struct cmd *cmd) {
+	struct cmd *p;
 	char **end;
-	size_t l, a;
+	size_t i, l, a;
+	struct context *context;
 
-	p = cmd = shell->cmds;
+	p = cmd;
 
 	end = p->args;
 	while ((p = p->next)) if (p->args) end = p->args;
@@ -33,44 +32,53 @@ void applyaliases(struct shell *shell) {
 
 	while ((p = cmd = cmd->next)) {
 		if (!cmd->args) continue;
-		for (aliases.c = aliases.b; aliases.c != aliases.t; INC(aliases, c))
-			if (strcmp(ALIAS->lhs, *cmd->args) == 0) break;
-		if (aliases.c == aliases.t) continue;
+		for (i = 0; i < aliases.size; ++i)
+			if (strcmp(aliases.entries[i].lhs, *cmd->args) == 0) break;
+		if (i == aliases.size) continue;
+		context = &aliases.entries[i].context;
 
-		strcpy(ALIAS->shell.buffer, ALIAS->rhs);
-		l = strlen(ALIAS->shell.buffer);
-		ALIAS->shell.buffer[l + 1] = '\0';
-		ALIAS->shell.buffer[l] = ';';
+		strcpy(context->buffer, aliases.entries[i].rhs);
+		l = strlen(context->buffer);
+		context->buffer[l + 1] = '\0';
+		context->buffer[l] = ';';
 
-		parse(&ALIAS->shell);
+		parse(context);
 
-		for (a = 0; ALIAS->shell.tokens[a]; ++a);
+		for (a = 0; context->tokens[a]; ++a);
 		memmove(cmd->args + a, cmd->args + 1, (end - cmd->args + 1) * sizeof*cmd->args);
-		memcpy(cmd->args, ALIAS->shell.tokens, a * sizeof*cmd->args);
+		memcpy(cmd->args, context->tokens, a * sizeof*cmd->args);
 		while ((p = p->next)) p->args += a - 1;
 	}
 }
 
 BUILTINSIG(alias) {
+	size_t i;
+	char *lhs;
+
 	switch (argc) {
 	case 1:
-		for (aliases.c = aliases.b; aliases.c != aliases.t; INC(aliases, c))
-			printf("%s = \"%s\"\r\n", ALIAS->lhs, ALIAS->rhs);
+		for (i = 0; i < aliases.size; ++i)
+			printf("%s = \"%s\"\r\n", aliases.entries[i].lhs, aliases.entries[i].rhs);
 		break;
 	case 3:
+		if (aliases.size == MAXALIAS) {
+			note("Unable to add alias `%s', maximum reached (%d)", argv[1], MAXALIAS);
+			return EXIT_FAILURE;
+		}
 		if (!*argv[2]) {
 			note("Cannot add empty alias");
 			return EXIT_FAILURE;
 		}
-		for (aliases.c = aliases.b; aliases.c != aliases.t; INC(aliases, c))
-			if (strcmp(ALIAS->lhs, argv[1]) == 0) break;
-		if (PLUSONE(aliases, c) == aliases.b) {
-			note("Unable to add alias `%s', maximum reached (%d)", argv[1], MAXALIAS);
-			return EXIT_FAILURE;
+		for (i = 0; i < aliases.size; ++i)
+			if (strcmp(aliases.entries[i].lhs, argv[1]) == 0) break;
+
+		lhs = aliases.entries[i].lhs;
+		if (i == aliases.size) {
+			strcpy(lhs, argv[1]);
+			++aliases.size;
 		}
-		strcpy(ALIAS->lhs, argv[1]);
-		strcpy(ALIAS->rhs = ALIAS->lhs + strlen(ALIAS->lhs) + 1, argv[2]);
-		if (aliases.c == aliases.t) INC(aliases, t);
+		strcpy(aliases.entries[i].rhs = lhs + strlen(lhs) + 1, argv[2]);
+
 		break;
 	default:
 		puts("Usage: alias [lhs rhs]\r");

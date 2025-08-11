@@ -1,22 +1,19 @@
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/errno.h>
 #include <termios.h>
 #include <unistd.h>
-#include <limits.h>
-#include <stdio.h> // XXX
+// #include <stdio.h> // XXX
 
-#include "input.h"
-#include "shell.h"
-#include "alias.h"
 #include "builtin.h"
+#include "input.h"
+#include "context.h"
+#include "alias.h"
 #include "job.h"
 #include "fg.h"
-#include "stack.h"
 #include "utils.h"
-
-int status;
 
 static int closepipe(struct cmd *cmd) {
 	int result;
@@ -61,23 +58,26 @@ static void redirectfiles(struct redirect *r) {
 static void exec(struct cmd *cmd) {
 	char cwd[PATH_MAX];
 
+	redirectfiles(cmd->rds);
+	if (isbuiltin(cmd->args)) exit(status);
 	execvp(*cmd->args, cmd->args);
 	if (!getcwd(cwd, PATH_MAX)) fatal("Unable to check current working directory");
 	execvP(*cmd->args, cwd, cmd->args);
 	fatal("Couldn't find `%s' command", *cmd->args);
 }
 
-int run(struct shell *shell) {
+int run(struct context *context) {
 	struct cmd *cmd;
 	int ispipe, ispipestart, ispipeend;
 	pid_t cpid, jobid;
 	struct job job;
 
-	if (!shell) return 0;
+	if (!context) return 0;
 
-	applyaliases(shell);
+	applyaliases(cmd = context->cmds);
 
-	cmd = shell->cmds;
+	setsigchld(&sigdfl);
+
 	while ((cmd = cmd->next)) {
 		if (!cmd->args) {
 			if (!cmd->r->mode) break;
@@ -115,24 +115,17 @@ int run(struct shell *shell) {
 						fatal("Unable to duplicate write end of `%s' pipe", *cmd->args);
 					if (!closepipe(cmd)) exit(EXIT_FAILURE);
 				}
-
-				redirectfiles(cmd->rds);
-				if (isbuiltin(cmd->args, &status)) exit(status);
 				exec(cmd);
 			}
 			if (!ispipestart) {
 				closepipe(cmd->prev);
-				jobid = ((struct job *)(ispipeend ? pull : peek)(&jobs))->id;
+				jobid = (ispipeend ? pulljob : peekjob)()->id;
 			}
-		} else if (!cmd->rds->mode && isbuiltin(cmd->args, &status)) cpid = 0;
+		} else if (!cmd->rds->mode && isbuiltin(cmd->args)) cpid = 0;
 		else if ((jobid = cpid = fork()) == -1) {
 			note("Unable to create child process");
 			break;
-		} else if (cpid == 0) {
-			redirectfiles(cmd->rds);
-			if (isbuiltin(cmd->args, &status)) exit(status);
-			exec(cmd);
-		}
+		} else if (cpid == 0) exec(cmd);
 
 		if (cpid) {
 			if (setpgid(cpid, jobid) == -1) {
@@ -145,20 +138,22 @@ int run(struct shell *shell) {
 			}
 			job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
 			if (ispipestart || cmd->term == BG) {
-				if (!push(&jobs, &job)) {
+				if (!pushjob(&job)) {
 					note("Unable to add job to background; too many background jobs");
 					if (ispipestart) closepipe(cmd);
 					break;
 				}
 			} else if (cmd->term != PIPE) {
 				if (!setfg(job)) break;
-				status = waitfg(job);
+				waitfg(job);
 			}
 		}
 
 		if (cmd->term == AND && status != EXIT_SUCCESS) break;
 		if (cmd->term == OR && status == EXIT_SUCCESS) break;
 	}
+
+	setsigchld(&sigchld);
 
 	return 1;
 }

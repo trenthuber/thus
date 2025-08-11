@@ -1,3 +1,4 @@
+#include <err.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
@@ -8,8 +9,46 @@
 
 #include "builtin.h"
 #include "job.h"
-#include "stack.h"
 #include "utils.h"
+
+static int fgstatus;
+struct sigaction sigchld, sigdfl;
+struct termios raw, canonical;
+
+static int setconfig(struct termios *mode) {
+	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
+		note("Unable to set termios config");
+		return 0;
+	}
+	return 1;
+}
+
+static void sigchldhandler(int sig) {
+	pid_t id;
+	struct job *job;
+
+	(void)sig;
+	while ((id = waitpid(-1, &fgstatus, WNOHANG | WUNTRACED)) > 0)
+		if ((job = searchjobid(id))) {
+			if (WIFSTOPPED(fgstatus)) job->type = SUSPENDED; else deletejobid(id);
+		} else if (!WIFSTOPPED(fgstatus)) while (waitpid(-id, NULL, 0) != -1);
+}
+
+void setsigchld(struct sigaction *act) {
+	if (sigaction(SIGCHLD, act, NULL) == -1)
+		fatal("Unable to install SIGCHLD handler");
+}
+
+void initterm(void) {
+	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
+		err(EXIT_FAILURE, "Unable to get default termios config");
+	cfmakeraw(&raw);
+	if (!setconfig(&raw)) exit(EXIT_FAILURE);
+
+	sigchld.sa_handler = sigchldhandler;
+	sigdfl.sa_handler = SIG_DFL;
+	setsigchld(&sigchld);
+}
 
 int setfg(struct job job) {
 	if (!setconfig(&job.config)) return 0;
@@ -25,11 +64,18 @@ int setfg(struct job job) {
 	return 1;
 }
 
-int waitfg(struct job job) {
+void waitfg(struct job job) {
+	struct sigaction sigign;
+
+	/* SIGCHLD handler is really the function that reaps the foreground process,
+	 * the waitpid() below is just to block the current thread of execution until
+	 * the foreground process has been reaped */
+	setsigchld(&sigchld);
 	while (waitpid(job.id, NULL, 0) != -1);
 	errno = 0;
+	setsigchld(&sigdfl);
 
-	if (sigaction(SIGTTOU, &sigign, NULL) == -1
+	if (sigaction(SIGTTOU, &(struct sigaction){{SIG_IGN}}, NULL) == -1
 	    || tcsetpgrp(STDIN_FILENO, getpgrp()) == -1
 	    || sigaction(SIGTTOU, &sigdfl, NULL) == -1) {
 		note("Unable to reclaim foreground; terminating");
@@ -40,52 +86,45 @@ int waitfg(struct job job) {
 		note("Unable to save termios config of job %d", job.id);
 	setconfig(&raw);
 
-	if (WIFEXITED(fgstatus)) return WEXITSTATUS(fgstatus);
-	else if (WIFSIGNALED(fgstatus)) return WTERMSIG(fgstatus);
-	job.type = SUSPENDED;
-	if (!push(&jobs, &job)) {
-		note("Unable to add job %d to list; too many jobs\r\n"
-		     "Press any key to continue", job.id);
-		getchar();
-		if (setfg(job)) return waitfg(job);
-		note("Manual intervention required for job %d", job.id);
+	if (WIFEXITED(fgstatus)) status = WEXITSTATUS(fgstatus);
+	else if (WIFSIGNALED(fgstatus)) status = WTERMSIG(fgstatus);
+	else {
+		status = WSTOPSIG(fgstatus);
+		job.type = SUSPENDED;
+		if (!pushjob(&job)) {
+			note("Unable to add job %d to list; too many jobs\r\n"
+				 "Press any key to continue", job.id);
+			getchar();
+			if (setfg(job)) return waitfg(job);
+			note("Manual intervention required for job %d", job.id);
+		}
 	}
-	return WSTOPSIG(fgstatus);
+}
+
+void deinitterm(void) {
+	setconfig(&canonical);
 }
 
 BUILTINSIG(fg) {
-	long jobid;
+	long l;
+	pid_t id;
 	struct job *job;
 
-	if (sigaction(SIGCHLD, &sigdfl, NULL) == -1) {
-		note("Unable to acquire lock on the job stack");
-		return EXIT_FAILURE;
-	}
-
-	if (argv[1]) {
+	if (argc > 1) {
 		errno = 0;
-		if ((jobid = strtol(argv[1], NULL, 10)) == LONG_MAX && errno
-		    || jobid <= 0) {
-			note("Invalid process group id");
+		if ((l = strtol(argv[1], NULL, 10)) == LONG_MAX && errno || l <= 0) {
+			note("Invalid process group id %ld", l);
 			return EXIT_FAILURE;
 		}
-		if (!(job = findjob((pid_t)jobid))) {
-			note("Unable to find process group %d", (pid_t)jobid);
+		if (!(job = searchjobid(id))) {
+			note("Unable to find process group %d", id);
 			return EXIT_FAILURE;
 		}
-		job = deletejob();
-	} else if (!(job = pull(&jobs))) {
+		deletejobid(id);
+	} else if (!(job = pulljob())) {
 		note("No processes to bring into the foreground");
 		return EXIT_FAILURE;
 	}
 
-	if (sigaction(SIGCHLD, &sigchld, NULL) == -1) {
-		note("Unable to reinstall SIGCHLD handler");
-		return EXIT_FAILURE;
-	}
-
-	if (!setfg(*job)) return EXIT_FAILURE;
-	waitfg(*job);
-
-	return EXIT_SUCCESS;
+	return setfg(*job) ? (waitfg(*job), EXIT_SUCCESS) : EXIT_FAILURE;
 }

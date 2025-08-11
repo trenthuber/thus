@@ -1,1 +1,1 @@
-struct shell *parse(struct shell *shell);
+struct context *parse(struct context *context);

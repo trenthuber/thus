@@ -32,7 +32,7 @@ struct cmd {
 	struct cmd *prev, *next;
 };
 
-struct shell {
+struct context {
 	char buffer[MAXCHARS + 1 + 1], *tokens[MAXCMDS + 1], *script, *string;
 	struct {
 		char *m;

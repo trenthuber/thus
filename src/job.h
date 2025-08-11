@@ -1,5 +1,3 @@
-#define JOB ((struct job *)jobs.c)
-
 enum jobtype {
 	BACKGROUND,
 	SUSPENDED,
@@ -11,8 +9,10 @@ struct job {
 	enum jobtype type;
 };
 
-extern struct stack jobs;
-extern int fgstatus;
-
-void *findjob(pid_t jobid);
-void *deletejob(void);
+struct job *pushjob(struct job *job);
+struct job *peekjob(void);
+struct job *pulljob(void);
+struct job *searchjobid(pid_t id);
+struct job *searchjobtype(enum jobtype);
+struct job *deletejobid(pid_t id);
+void initjobs(void);

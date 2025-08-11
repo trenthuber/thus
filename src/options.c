@@ -4,12 +4,12 @@
 #include <unistd.h>
 
 #include "input.h"
-#include "shell.h"
+#include "context.h"
 
 int login, interactive, argc;
 char **argv;
 
-struct shell shell;
+struct context context;
 
 static void usage(char *program, int code) {
 	printf("Usage: %s [file] [-c string] [-hl]\n"
@@ -25,14 +25,14 @@ void options(void) {
 
 	login = **argv == '-';
 	interactive = 1;
-	shell.input = userinput;
+	context.input = userinput;
 
 	while ((opt = getopt(argc, argv, ":c:hl")) != -1) {
 		switch (opt) {
 		case 'c':
 			interactive = 0;
-			shell.string = optarg;
-			shell.input = stringinput;
+			context.string = optarg;
+			context.input = stringinput;
 			break;
 		case 'h':
 			usage(*argv, EXIT_SUCCESS);
@@ -49,10 +49,10 @@ void options(void) {
 		}
 		if (opt == 'c') break;
 	}
-	if (!shell.string && argv[optind]) {
+	if (!context.string && argv[optind]) {
 		interactive = 0;
-		shell.script = argv[optind];
-		shell.input = scriptinput;
+		context.script = argv[optind];
+		context.input = scriptinput;
 	}
 	if (!interactive) {
 		argc -= optind;

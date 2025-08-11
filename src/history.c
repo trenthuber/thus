@@ -1,56 +1,66 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/errno.h>
 
 #include "input.h"
-#include "shell.h"
-#include "stack.h"
+#include "context.h"
 #include "utils.h"
 
-#define HISTORYFILE ".ashhistory"
 #define MAXHIST 100
-#define BUFFER ((char *)history.t)
+#define INC(v) (history.v = (history.v + 1) % (MAXHIST + 1))
+#define DEC(v) (history.v = (history.v + MAXHIST) % (MAXHIST + 1))
 
-static char historyarr[MAXHIST + 1][MAXCHARS + 1], filepath[PATH_MAX];
-INITSTACK(history, historyarr, 1);
-
-/* TODO
-	void addhistory(char *buffer);
-	int prevhistory(char *buffer);
-	int nexthistory(char *buffer);
-*/
+static struct {
+	char path[PATH_MAX], entries[MAXHIST + 1][MAXCHARS + 1];
+	size_t b, c, t;
+} history;
 
 void readhistory(void) {
-	char *p;
 	FILE *file;
 	
-	if (!catpath(home, HISTORYFILE, filepath)) exit(EXIT_FAILURE);
-	if (!(file = fopen(filepath, "r"))) {
+	if (!catpath(home, ".ashhistory", history.path)) exit(EXIT_FAILURE);
+	if (!(file = fopen(history.path, "r"))) {
 		if (errno == ENOENT) return;
 		fatal("Unable to open history file for reading");
 	}
-	while (fgets(BUFFER, history.size, file)) {
-		*(BUFFER + strlen(BUFFER) - 1) = '\0';
-		push(&history, BUFFER);
+	while (fgets(history.entries[history.t], sizeof*history.entries, file)) {
+		history.entries[history.t][strlen(history.entries[history.t]) - 1] = '\0';
+		if ((history.c = INC(t)) == history.b) INC(b);
 	}
 	if (ferror(file) || !feof(file))
 		fatal("Unable to read from history file");
 	if (fclose(file) == EOF) fatal("Unable to close history file");
 }
 
+int gethistory(char direction, char *buffer) {
+	if (history.c == (direction == UP ? history.b : history.t)) return 0;
+
+	// Save the most recently modified history entry at the top of the list
+	if (strcmp(history.entries[history.c], buffer) != 0)
+		strcpy(history.entries[history.t], buffer);
+
+	strcpy(buffer, history.entries[direction == UP ? DEC(c) : INC(c)]);
+
+	return 1;
+}
+
+void sethistory(char *buffer) {
+	strcpy(history.entries[history.t], buffer);
+	if ((history.c = INC(t)) == history.b) INC(b);
+	*history.entries[history.t] = '\0';
+}
+
 void writehistory(void) {
-	char *filename;
 	FILE *file;
 
-	if (!(file = fopen(filepath, "w"))) {
+	if (!(file = fopen(history.path, "w"))) {
 		note("Unable to open history file for writing");
 		return;
 	}
-	for (history.c = history.b; history.c != history.t; INC(history, c)) {
-		if (fputs((char *)history.c, file) == EOF) {
+	for (history.c = history.b; history.c != history.t; INC(c)) {
+		if (fputs(history.entries[history.c], file) == EOF) {
 			note("Unable to write to history file");
 			break;
 		}

@@ -1,1 +1,1 @@
-void applyaliases(struct shell *shell);
+void applyaliases(struct cmd *cmd);

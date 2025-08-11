@@ -17,8 +17,7 @@ int main(void) {
 	                               {"options", NONE},
 	                               {"parse", NONE},
 	                               {"run", BUILTINS},
-	                               {"stack", NONE},
-	                               {"utils", NONE},
+	                               {"utils", BUILTINS},
 
 	                               {"builtin.a"},
 

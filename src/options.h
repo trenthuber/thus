@@ -1,5 +1,5 @@
 extern int login, interactive, argc;
 extern char **argv;
-extern struct shell shell;
+extern struct context context;
 
 void options(void);
