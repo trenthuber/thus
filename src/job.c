@@ -1,6 +1,5 @@
 #include <string.h>
 #include <termios.h>
-// #include <stdio.h> // XXX
 
 #include "job.h"
 #include "utils.h"
@@ -16,6 +15,13 @@ static struct {
 	struct joblink entries[MAXJOBS + 1], *active, *free;
 } jobs;
 
+void initjobs(void) {
+	size_t i;
+
+	for (i = 0; i < MAXJOBS - 1; ++i) jobs.entries[i].next = &jobs.entries[i + 1];
+	jobs.free = jobs.entries;
+}
+
 struct job *pushjob(struct job *job) {
 	struct joblink *p;
 
@@ -29,10 +35,6 @@ struct job *pushjob(struct job *job) {
 	return &p->job;
 }
 
-struct job *peekjob(void) {
-	return jobs.active ? &jobs.active->job : NULL;
-}
-
 struct job *pulljob(void) {
 	struct joblink *p;
 
@@ -44,6 +46,10 @@ struct job *pulljob(void) {
 	jobs.free = p;
 
 	return &p->job;
+}
+
+struct job *peekjob(void) {
+	return jobs.active ? &jobs.active->job : NULL;
 }
 
 struct job *searchjobid(pid_t id) {
@@ -73,11 +79,4 @@ struct job *deletejobid(pid_t id) {
 	jobs.free = p;
 
 	return &p->job;
-}
-
-void initjobs(void) {
-	size_t i;
-
-	for (i = 0; i < MAXJOBS - 1; ++i) jobs.entries[i].next = &jobs.entries[i + 1];
-	jobs.free = jobs.entries;
 }

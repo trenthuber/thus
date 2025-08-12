@@ -1,7 +1,7 @@
 #include <stdlib.h>
 
-#include "input.h"
 #include "context.h"
+#include "input.h"
 #include "options.h"
 #include "parse.h"
 #include "run.h"
@@ -14,14 +14,14 @@ int main(int c, char **v) {
 
 	options();
 
-	initialize();
+	init();
 
 	if (login) config(".ashlogin");
-	if (interactive) config(".ashint");
+	if (interactive) config(".ashrc");
 
 	while (run(parse(context.input(&context))));
 
-	deinitialize();
+	deinit();
 
 	return EXIT_SUCCESS;
 }

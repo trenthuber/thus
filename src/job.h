@@ -9,10 +9,10 @@ struct job {
 	enum jobtype type;
 };
 
+void initjobs(void);
 struct job *pushjob(struct job *job);
-struct job *peekjob(void);
 struct job *pulljob(void);
+struct job *peekjob(void);
 struct job *searchjobid(pid_t id);
 struct job *searchjobtype(enum jobtype);
 struct job *deletejobid(pid_t id);
-void initjobs(void);

@@ -3,31 +3,32 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/errno.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
-// #include <stdio.h> // XXX
 
 #include "builtin.h"
-#include "input.h"
 #include "context.h"
 #include "alias.h"
+#include "input.h"
 #include "job.h"
 #include "fg.h"
 #include "utils.h"
 
-static int closepipe(struct cmd *cmd) {
+static int closepipe(struct command *command) {
 	int result;
 
-	result = close(cmd->pipe[0]) == 0;
-	result &= close(cmd->pipe[1]) == 0;
-	if (!result) note("Unable to close `%s' pipe", *cmd->args);
+	result = close(command->pipe[0]) == 0;
+	result &= close(command->pipe[1]) == 0;
+	if (!result) note("Unable to close `%s' pipe", *command->args);
+
 	return result;
 }
 
 static void redirectfiles(struct redirect *r) {
 	int mode, fd;
 
-	for (; r->mode; ++r) {
+	for (; r; r = r->next) {
 		if (r->oldname) {
 			switch (r->mode) {
 			case READ:
@@ -55,105 +56,111 @@ static void redirectfiles(struct redirect *r) {
 	}
 }
 
-static void exec(struct cmd *cmd) {
+static void exec(struct command *c) {
 	char cwd[PATH_MAX];
 
-	redirectfiles(cmd->rds);
-	if (isbuiltin(cmd->args)) exit(status);
-	execvp(*cmd->args, cmd->args);
+	redirectfiles(c->r);
+
+	if (isbuiltin(c->args)) exit(status);
+	execvp(*c->args, c->args);
 	if (!getcwd(cwd, PATH_MAX)) fatal("Unable to check current working directory");
-	execvP(*cmd->args, cwd, cmd->args);
-	fatal("Couldn't find `%s' command", *cmd->args);
+	execvP(*c->args, cwd, c->args);
+
+	fatal("Couldn't find `%s' command", *c->args);
 }
 
-int run(struct context *context) {
-	struct cmd *cmd;
+PIPELINE(run) {
+	struct command *c;
 	int ispipe, ispipestart, ispipeend;
 	pid_t cpid, jobid;
 	struct job job;
 
-	if (!context) return 0;
+	if (!context) return NULL;
 
-	applyaliases(cmd = context->cmds);
+	applyaliases(c = context->commands);
 
 	setsigchld(&sigdfl);
 
-	while ((cmd = cmd->next)) {
-		if (!cmd->args) {
-			if (!cmd->r->mode) break;
-			if ((cpid = fork()) == -1) {
-				note("Unable to create child process");
-				break;
-			} else if (cpid == 0) {
-				redirectfiles(cmd->r);
-				exit(EXIT_SUCCESS);
-			}
-			continue;
-		}
-
-		ispipe = cmd->term == PIPE || cmd->prev->term == PIPE;
-		ispipestart = ispipe && cmd->prev->term != PIPE;
-		ispipeend = ispipe && cmd->term != PIPE;
+	while ((c = c->next)) if (c->args) {
+		ispipe = c->term == PIPE || c->prev->term == PIPE;
+		ispipestart = ispipe && c->prev->term != PIPE;
+		ispipeend = ispipe && c->term != PIPE;
 
 		if (ispipe) {
-			if (!ispipeend && pipe(cmd->pipe) == -1) {
+			if (!ispipeend && pipe(c->pipe) == -1) {
 				note("Unable to create pipe");
-				if (!ispipestart) closepipe(cmd->prev);
+				if (!ispipestart) closepipe(c->prev);
 				break;
 			}
 			if ((jobid = cpid = fork()) == -1) {
-				note("Unable to create child process");
+				note("Unable to fork child process");
 				break;
 			} else if (cpid == 0) {
 				if (!ispipestart) {
-					if (dup2(cmd->prev->pipe[0], 0) == -1)
-						fatal("Unable to duplicate read end of `%s' pipe", *cmd->prev->args);
-					if (!closepipe(cmd->prev)) exit(EXIT_FAILURE);
+					if (dup2(c->prev->pipe[0], 0) == -1)
+						fatal("Unable to duplicate read end of `%s' pipe", *c->prev->args);
+					if (!closepipe(c->prev)) exit(EXIT_FAILURE);
 				}
 				if (!ispipeend) {
-					if (dup2(cmd->pipe[1], 1) == -1)
-						fatal("Unable to duplicate write end of `%s' pipe", *cmd->args);
-					if (!closepipe(cmd)) exit(EXIT_FAILURE);
+					if (dup2(c->pipe[1], 1) == -1)
+						fatal("Unable to duplicate write end of `%s' pipe", *c->args);
+					if (!closepipe(c)) exit(EXIT_FAILURE);
 				}
-				exec(cmd);
+				exec(c);
 			}
 			if (!ispipestart) {
-				closepipe(cmd->prev);
+				closepipe(c->prev);
 				jobid = (ispipeend ? pulljob : peekjob)()->id;
 			}
-		} else if (!cmd->rds->mode && isbuiltin(cmd->args)) cpid = 0;
+		} else if (!c->r && isbuiltin(c->args)) cpid = 0;
 		else if ((jobid = cpid = fork()) == -1) {
-			note("Unable to create child process");
+			note("Unable to fork child process");
 			break;
-		} else if (cpid == 0) exec(cmd);
+		} else if (cpid == 0) exec(c);
 
 		if (cpid) {
 			if (setpgid(cpid, jobid) == -1) {
 				if (errno != ESRCH) {
-					note("Unable to set pgid of `%s' command to %d", *cmd->args, jobid);
+					note("Unable to set pgid of `%s' command to %d", *c->args, jobid);
 					if (kill(cpid, SIGKILL) == -1)
 						note("Unable to kill process %d; may need to manually terminate", cpid);
 				}
 				break;
 			}
 			job = (struct job){.id = jobid, .config = canonical, .type = BACKGROUND};
-			if (ispipestart || cmd->term == BG) {
+			if (ispipestart || c->term == BG) {
 				if (!pushjob(&job)) {
 					note("Unable to add job to background; too many background jobs");
-					if (ispipestart) closepipe(cmd);
+					if (ispipestart) closepipe(c);
 					break;
 				}
-			} else if (cmd->term != PIPE) {
+			} else if (c->term != PIPE) {
 				if (!setfg(job)) break;
 				waitfg(job);
 			}
 		}
 
-		if (cmd->term == AND && status != EXIT_SUCCESS) break;
-		if (cmd->term == OR && status == EXIT_SUCCESS) break;
+		if (c->term == AND && status != EXIT_SUCCESS) break;
+		if (c->term == OR && status == EXIT_SUCCESS) break;
+	} else {
+		if (c->term == AND || c->term == PIPE || c->term == OR) {
+			note("Expected command");
+			break;
+		}
+		if (!c->r) break;
+
+		if ((cpid = fork()) == -1) {
+			note("Unable to fork child process");
+			break;
+		} else if (cpid == 0) {
+			redirectfiles(c->r);
+			exit(EXIT_SUCCESS);
+		}
+		waitpid(cpid, NULL, 0);
+		errno = 0; // waitpid() might set errno
 	}
 
 	setsigchld(&sigchld);
 
-	return 1;
+	return context;
 }

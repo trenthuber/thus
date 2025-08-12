@@ -1,7 +1,3 @@
-#define INPUT(name) struct context *name(struct context *context)
-
-typedef INPUT((*Input));
-
 enum {
 	CTRLC = '\003',
 	CTRLD,
@@ -18,6 +14,6 @@ enum {
 	DEL = '\177',
 };
 
-INPUT(stringinput);
-INPUT(scriptinput);
-INPUT(userinput);
+PIPELINE(stringinput);
+PIPELINE(scriptinput);
+PIPELINE(userinput);

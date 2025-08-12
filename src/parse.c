@@ -3,34 +3,37 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "input.h"
 #include "context.h"
+#include "input.h"
 #include "options.h"
 #include "utils.h"
 
-static void initcmd(struct cmd *cmd) {
-	cmd->args = NULL;
-	cmd->r = cmd->rds;
-	cmd->r->mode = END;
-	cmd->prev = cmd - 1;
-	cmd->next = NULL;
+static void initcommand(struct command *c) {
+	c->args = NULL;
+	c->r = NULL;
+	c->prev = c - 1;
+	c->next = NULL;
 }
 
-struct context *parse(struct context *context) {
+PIPELINE(parse) {
 	char *b, **t, *name, *value, *stlend, *p, *end, *env;
-	struct cmd *c;
+	struct redirect *r, *q;
+	struct command *c;
 	long l;
 	int e, offset;
 	
 	if (!context) return NULL;
+
 	b = context->buffer;
 	t = context->tokens;
-	c = context->cmds + 1;
-	context->cmds->next = NULL;
+	r = context->redirects;
+	c = context->commands + 1;
+	context->commands->next = NULL;
 	*t = value = name = NULL;
-	for (initcmd(c); *b; ++b) switch (*b) {
+	r->mode = NONE;
+	for (initcommand(c); *b; ++b) switch (*b) {
 	default:
-		if (c->r->mode) break;
+		if (r->mode) break;
 		if (!c->args) c->args = t;
 		if (!*(b - 1)) {
 			if (!name) *t++ = b; else if (!value) value = b;
@@ -38,25 +41,29 @@ struct context *parse(struct context *context) {
 		break;
 	case '<':
 	case '>':
-		if (c->r->mode) {
+		if (r->mode) {
 			note("File redirections should be separated by spaces");
 			return context;
 		}
-		c->r->newfd = *b == '>';
+		if (r - context->redirects == MAXREDIRECTS) {
+			note("Too many file redirects, exceeds %d redirect limit", MAXREDIRECTS);
+			return context;
+		}
+		if (!c->r) c->r = r;
 		if (*(b - 1)) {
 			if (c->args == --t) c->args = NULL;
 			if ((l = strtol(*t, &stlend, 10)) < 0 || l > INT_MAX || stlend != b) {
 				note("Invalid value for a file redirection");
 				return context;
 			}
-			c->r->newfd = l;
-		}
-		c->r->mode = *b;
+			r->newfd = l;
+		} else r->newfd = *b == '>';
+		r->mode = *b;
 		if (*(b + 1) == '>') {
-			++c->r->mode;
+			++r->mode;
 			++b;
 		}
-		c->r->oldname = b + 1;
+		r->oldname = b + 1;
 		if (*(b + 1) == '&') ++b;
 		break;
 	case '"':
@@ -95,6 +102,7 @@ struct context *parse(struct context *context) {
 		*end = '\0';
 		memmove(p, p + 1, end - p);
 		--b;
+
 		break;
 	case '=':
 		name = *--t;
@@ -130,6 +138,7 @@ struct context *parse(struct context *context) {
 		memmove(b + offset, b, end - b + 1);
 		strncpy(p, env, e);
 		b += offset - 1;
+
 		break;
 	case '~':
 		if (!*(b - 1)) {
@@ -147,26 +156,27 @@ struct context *parse(struct context *context) {
 	case '|':
 	case ';':
 		if (name && *c->args == name) c->args = NULL;
-		if (c->args || c->rds->mode) {
+		if (c->args || c->r) {
 			if ((c->term = *b) == *(b + 1) && (*b == '&' || *b == '|')) {
 				++c->term;
 				*b++ = '\0';
 			}
 			*b = '\0';
-			if (c->r->mode) (++c->r)->mode = END;
-			for (c->r = c->rds; c->r->mode; ++c->r) if (*c->r->oldname == '&') {
-				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0
-				    || l > INT_MAX || *stlend) {
+
+			if (r->mode) {
+				r++->next = NULL;
+				r->mode = NONE;
+			} else if (c->r) (r - 1)->next = NULL;
+			for (q = c->r; q; q = q->next) if (*q->oldname == '&') {
+				if ((l = strtol(++q->oldname, &stlend, 10)) < 0 || l > INT_MAX || *stlend) {
 					note("Incorrect syntax for file redirection");
 					return context;
 				}
-				c->r->oldfd = l;
-				c->r->oldname = NULL;
+				q->oldfd = l;
+				q->oldname = NULL;
 			}
-			c->r = c->rds;
-			c->next = c + 1;
 
-			initcmd(++c);
+			initcommand(c = c->next = c + 1);
 			*t++ = NULL;
 		}
 	case ' ':
@@ -178,7 +188,10 @@ struct context *parse(struct context *context) {
 			}
 			value = name = NULL;
 		}
-		if (c->r->mode) (++c->r)->mode = END;
+		if (r->mode) {
+			r = r->next = r + 1;
+			r->mode = NONE;
+		}
 	}
 
 	(--c)->next = NULL;
@@ -192,6 +205,7 @@ struct context *parse(struct context *context) {
 		break;
 	}
 
-	context->cmds->next = context->cmds + 1;
+	context->commands->next = context->commands + 1;
+
 	return context;
 }

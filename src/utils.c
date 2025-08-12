@@ -21,7 +21,7 @@ void note(char *fmt, ...) {
 	va_start(args, fmt);
 	(errno ? vwarn : vwarnx)(fmt, args);
 	va_end(args);
-	putchar('\r');
+	putc('\r', stderr);
 	errno = 0;
 }
 
@@ -30,27 +30,26 @@ void fatal(char *fmt, ...) {
 	va_start(args, fmt);
 	(errno ? vwarn : vwarnx)(fmt, args);
 	va_end(args);
-	putchar('\r');
+	putc('\r', stderr);
 	exit(EXIT_FAILURE);
 }
 
-void initialize(void) {
+void init(void) {
 	char *shlvlstr, buffer[19 + 1];
 	long shlvl;
-
-	initterm();
 
 	if (!(home = getenv("HOME")))
 		fatal("Unable to locate user's home directory, $HOME$ not set");
 
 	if (!(shlvlstr = getenv("SHLVL"))) shlvlstr = "0";
 	if ((shlvl = strtol(shlvlstr, NULL, 10)) < 0) shlvl = 0;
-	sprintf(shlvlstr = buffer, "%ld", shlvl + 1);
-	if (setenv("SHLVL", shlvlstr, 1) == -1)
+	sprintf(buffer, "%ld", shlvl + 1);
+	if (setenv("SHLVL", buffer, 1) == -1)
 		note("Unable to update $SHLVL$ environment variable");
 
-	if (interactive) readhistory();
+	initfg();
 	initjobs();
+	if (interactive) inithistory();
 }
 
 char *catpath(char *dir, char *filename, char *buffer) {
@@ -69,8 +68,7 @@ char *catpath(char *dir, char *filename, char *buffer) {
 	return buffer;
 }
 
-void deinitialize(void) {
-	deinitterm();
-
-	if (interactive) writehistory();
+void deinit(void) {
+	if (interactive) deinithistory();
+	deinitfg();
 }

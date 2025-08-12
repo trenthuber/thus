@@ -13,7 +13,13 @@ int main(void) {
 	int listfd, l;
 	DIR *dir;
 	size_t i, offset;
-	struct cbsfile files[1 + MAXBUILTINS + 1];
+
+	/* The three extra files correspond to:
+	 * 1) output file (../libbuiltin.a)
+	 * 2) list.c
+	 * 3) builtin.c */
+	struct cbsfile files[3 + MAXBUILTINS + 1];
+
 	struct dirent *entry;
 	char *name, *identifier;
 
@@ -35,7 +41,7 @@ int main(void) {
 		if (strcmp(entry->d_name, "build.c") == 0) continue;
 		if (!(name = strrchr(entry->d_name, '.')) || strcmp(name, ".c") != 0)
 			continue;
-		if (i == 1 + MAXBUILTINS + 1)
+		if (i == 3 + MAXBUILTINS + 1)
 			errx(EXIT_FAILURE, "Unable to add built-in `%s', maximum reached (%d)",
 			     name, MAXBUILTINS);
 		if (!(name = strdup(entry->d_name)))
@@ -48,7 +54,7 @@ int main(void) {
 	}
 	if (errno) err(EXIT_FAILURE, "Unable to read from current directory");
 	files[i] = (struct cbsfile){NULL};
-	
+
 	identifier = "struct builtin builtins[] = {";
 	l = (int)strlen(identifier);
 	dprintf(listfd, "\n%s", identifier);

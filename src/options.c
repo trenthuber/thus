@@ -1,14 +1,13 @@
-#include <err.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "input.h"
 #include "context.h"
+#include "input.h"
+#include "utils.h"
 
 int login, interactive, argc;
 char **argv;
-
 struct context context;
 
 static void usage(char *program, int code) {
@@ -40,11 +39,11 @@ void options(void) {
 			login = 1;
 			break;
 		case ':':
-			warnx("Expected argument following `-%c'\n", optopt);
+			note("Expected argument following `-%c'\n", optopt);
 			usage(*argv, EXIT_FAILURE);
 		case '?':
 		default:
-			warnx("Unknown command line option `-%c'\n", optopt);
+			note("Unknown command line option `-%c'\n", optopt);
 			usage(*argv, EXIT_FAILURE);
 		}
 		if (opt == 'c') break;

@@ -1,4 +1,3 @@
-#include <err.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
@@ -12,8 +11,9 @@
 #include "utils.h"
 
 static int fgstatus;
+struct termios canonical;
+static struct termios raw;
 struct sigaction sigchld, sigdfl;
-struct termios raw, canonical;
 
 static int setconfig(struct termios *mode) {
 	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
@@ -39,9 +39,9 @@ void setsigchld(struct sigaction *act) {
 		fatal("Unable to install SIGCHLD handler");
 }
 
-void initterm(void) {
+void initfg(void) {
 	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
-		err(EXIT_FAILURE, "Unable to get default termios config");
+		fatal("Unable to get default termios config");
 	cfmakeraw(&raw);
 	if (!setconfig(&raw)) exit(EXIT_FAILURE);
 
@@ -71,15 +71,15 @@ void waitfg(struct job job) {
 	 * the waitpid() below is just to block the current thread of execution until
 	 * the foreground process has been reaped */
 	setsigchld(&sigchld);
-	while (waitpid(job.id, NULL, 0) != -1);
-	errno = 0;
+	waitpid(job.id, NULL, 0);
+	errno = 0; // waitpid() will set errno
 	setsigchld(&sigdfl);
 
 	if (sigaction(SIGTTOU, &(struct sigaction){{SIG_IGN}}, NULL) == -1
 	    || tcsetpgrp(STDIN_FILENO, getpgrp()) == -1
 	    || sigaction(SIGTTOU, &sigdfl, NULL) == -1) {
 		note("Unable to reclaim foreground; terminating");
-		deinitialize();
+		deinit();
 		exit(EXIT_FAILURE);
 	}
 	if (tcgetattr(STDIN_FILENO, &job.config) == -1)
@@ -101,7 +101,7 @@ void waitfg(struct job job) {
 	}
 }
 
-void deinitterm(void) {
+void deinitfg(void) {
 	setconfig(&canonical);
 }
 
@@ -126,5 +126,8 @@ BUILTINSIG(fg) {
 		return EXIT_FAILURE;
 	}
 
-	return setfg(*job) ? (waitfg(*job), EXIT_SUCCESS) : EXIT_FAILURE;
+	if (!setfg(*job)) return EXIT_FAILURE;
+	waitfg(*job);
+
+	return EXIT_SUCCESS;
 }

@@ -4,11 +4,12 @@
 #include <string.h>
 #include <sys/errno.h>
 
-#include "input.h"
 #include "context.h"
+#include "input.h"
 #include "utils.h"
 
 #define MAXHIST 100
+
 #define INC(v) (history.v = (history.v + 1) % (MAXHIST + 1))
 #define DEC(v) (history.v = (history.v + MAXHIST) % (MAXHIST + 1))
 
@@ -17,9 +18,9 @@ static struct {
 	size_t b, c, t;
 } history;
 
-void readhistory(void) {
+void inithistory(void) {
 	FILE *file;
-	
+
 	if (!catpath(home, ".ashhistory", history.path)) exit(EXIT_FAILURE);
 	if (!(file = fopen(history.path, "r"))) {
 		if (errno == ENOENT) return;
@@ -52,7 +53,7 @@ void sethistory(char *buffer) {
 	*history.entries[history.t] = '\0';
 }
 
-void writehistory(void) {
+void deinithistory(void) {
 	FILE *file;
 
 	if (!(file = fopen(history.path, "w"))) {

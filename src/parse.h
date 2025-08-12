@@ -1,1 +1,1 @@
-struct context *parse(struct context *context);
+PIPELINE(parse);

@@ -1,4 +1,4 @@
-void readhistory(void);
+void inithistory(void);
 int gethistory(char direction, char *buffer);
 void sethistory(char *buffer);
-void writehistory(void);
+void deinithistory(void);

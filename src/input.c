@@ -7,22 +7,21 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "context.h"
 #include "history.h"
 #include "input.h"
-#include "context.h"
 #include "utils.h"
 
-#define DEFAULTPROMPT ">"
-
-INPUT(stringinput) {
+PIPELINE(stringinput) {
 	char *start;
 	size_t l;
 
 	if (!*context->string) {
-		if (context->script && munmap(context->map.m, context->map.l) == -1)
+		if (context->script && munmap(context->map, context->len) == -1)
 			note("Unable to unmap memory associated with `%s'", context->script);
 		return NULL;
 	}
+
 	start = context->string;
 	while (*context->string && *context->string != '\n') ++context->string;
 	l = context->string - start;
@@ -31,6 +30,7 @@ INPUT(stringinput) {
 		note("Line too long, exceeds %d character limit", MAXCHARS);
 		return NULL;
 	}
+
 	strncpy(context->buffer, start, l);
 	context->buffer[l] = ';';
 	context->buffer[l + 1] = '\0';
@@ -38,7 +38,7 @@ INPUT(stringinput) {
 	return context;
 }
 
-INPUT(scriptinput) {
+PIPELINE(scriptinput) {
 	int fd;
 	struct stat sstat;
 
@@ -50,8 +50,9 @@ INPUT(scriptinput) {
 		note("Unable to stat `%s'", context->script);
 		return NULL;
 	}
-	if ((context->map.l = sstat.st_size) == 0) return NULL;
-	if ((context->string = context->map.m = mmap(NULL, context->map.l, PROT_READ, MAP_PRIVATE, fd, 0)) == MAP_FAILED) {
+	if ((context->len = sstat.st_size) == 0) return NULL;
+	if ((context->map = mmap(NULL, context->len, PROT_READ, MAP_PRIVATE, fd, 0))
+	    == MAP_FAILED) {
 		note("Unable to memory map `%s'", context->script);
 		return NULL;
 	}
@@ -59,28 +60,29 @@ INPUT(scriptinput) {
 		note("Unable to close `%s'", context->script);
 		return NULL;
 	}
+
+	context->string = context->map;
 	context->input = stringinput;
 
 	return context->input(context);
 }
 
-static size_t prompt(void) {
+static void prompt(void) {
 	char *p;
 
-	if (!(p = getenv("PROMPT")) && setenv("PROMPT", p = DEFAULTPROMPT, 1) == -1)
+	if (!(p = getenv("PROMPT")) && setenv("PROMPT", p = ">", 1) == -1)
 		note("Unable to update $PROMPT$ environment variable");
-	printf("%s ", p);
-	return strlen(p) + 1;
+	printf("\r%s ", p);
 }
 
-INPUT(userinput) {
+PIPELINE(userinput) {
 	char *start, *cursor, *end;
 	unsigned int c;
 	int i;
 	size_t oldlen, newlen;
 
 	end = cursor = start = context->buffer;
-	*start = '\0';
+	*context->buffer = '\0';
 	while (start == end) {
 		prompt();
 		while ((c = getchar()) != '\r') switch (c) {
@@ -98,7 +100,7 @@ INPUT(userinput) {
 			break;
 		case CTRLC:
 			puts("^C\r");
-			*start = '\0';
+			*context->buffer = '\0';
 			return context;
 		case CTRLD:
 			puts("^D\r");
@@ -106,7 +108,7 @@ INPUT(userinput) {
 		case CLEAR:
 			fputs("\033[H\033[J", stdout);
 			prompt();
-			fputs(start, stdout);
+			fputs(context->buffer, stdout);
 			continue;
 		case ESCAPE:
 			switch ((c = getchar())) {
@@ -122,16 +124,17 @@ INPUT(userinput) {
 				switch ((c = getchar())) {
 				case UP:
 				case DOWN:
-					oldlen = strlen(start);
-					if (!gethistory(c, start)) continue;
-					newlen = strlen(start);
+					oldlen = strlen(context->buffer);
+					if (!gethistory(c, context->buffer)) continue;
+					newlen = strlen(context->buffer);
 					end = cursor = start + newlen;
 
 					putchar('\r');
 					prompt();
-					fputs(start, stdout);
+					fputs(context->buffer, stdout);
 					for (i = oldlen - newlen; i > 0; --i) putchar(' ');
 					for (i = oldlen - newlen; i > 0; --i) putchar('\b');
+
 					break;
 				case LEFT:
 					if (cursor > start) putchar((--cursor, '\b'));
@@ -161,7 +164,14 @@ INPUT(userinput) {
 		}
 		puts("\r");
 	}
-	sethistory(start);
+
+	while (*start == ' ') ++start;
+	if (start == end) {
+		*context->buffer = '\0';
+		return context;
+	}
+
+	sethistory(context->buffer);
 
 	*end++ = ';';
 	*end = '\0';

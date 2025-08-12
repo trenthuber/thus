@@ -3,8 +3,8 @@
 #include <string.h>
 
 #include "builtin.h"
-#include "input.h"
 #include "context.h"
+#include "input.h"
 #include "parse.h"
 #include "utils.h"
 
@@ -18,22 +18,22 @@ static struct {
 	size_t size;
 } aliases;
 
-void applyaliases(struct cmd *cmd) {
-	struct cmd *p;
+void applyaliases(struct command *command) {
+	struct command *c;
 	char **end;
 	size_t i, l, a;
 	struct context *context;
 
-	p = cmd;
+	c = command;
 
-	end = p->args;
-	while ((p = p->next)) if (p->args) end = p->args;
+	end = c->args;
+	while ((c = c->next)) if (c->args) end = c->args;
 	if (end) while (*end) ++end;
 
-	while ((p = cmd = cmd->next)) {
-		if (!cmd->args) continue;
+	while ((c = command = command->next)) {
+		if (!command->args) continue;
 		for (i = 0; i < aliases.size; ++i)
-			if (strcmp(aliases.entries[i].lhs, *cmd->args) == 0) break;
+			if (strcmp(aliases.entries[i].lhs, *command->args) == 0) break;
 		if (i == aliases.size) continue;
 		context = &aliases.entries[i].context;
 
@@ -45,9 +45,10 @@ void applyaliases(struct cmd *cmd) {
 		parse(context);
 
 		for (a = 0; context->tokens[a]; ++a);
-		memmove(cmd->args + a, cmd->args + 1, (end - cmd->args + 1) * sizeof*cmd->args);
-		memcpy(cmd->args, context->tokens, a * sizeof*cmd->args);
-		while ((p = p->next)) p->args += a - 1;
+		memmove(command->args + a, command->args + 1,
+		        (end - command->args + 1) * sizeof*command->args);
+		memcpy(command->args, context->tokens, a * sizeof*command->args);
+		while ((c = c->next)) c->args += a - 1;
 	}
 }
 
