@@ -9,17 +9,29 @@
 #include "run.h"
 #include "utils.h"
 
-BUILTINSIG(source) {
+BUILTIN(source) {
 	struct context context;
-
-	if (argc != 2) {
-		note("Usage: source file");
+	int c;
+	char **v;
+	
+	if (argc == 1) {
+		fputs("Usage: source file [args ...]\r\n", stderr);
 		return EXIT_FAILURE;
 	}
 
+	context = (struct context){0};
 	context.script = argv[1];
 	context.input = scriptinput;
-	while (run(parse(context.input(&context))));
+
+	c = argcount;
+	v = arglist;
+	argcount = argc - 1;
+	arglist = argv + 1;
+
+	while (run(&context));
+
+	argcount = c;
+	arglist = v;
 
 	return EXIT_SUCCESS;
 }
@@ -27,5 +39,5 @@ BUILTINSIG(source) {
 void config(char *name) {
 	char path[PATH_MAX];
 
-	source(2, (char *[]){name, catpath(home, name, path), NULL});
+	source(2, (char *[]){"source", catpath(home, name, path), NULL});
 }

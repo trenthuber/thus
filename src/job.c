@@ -25,7 +25,11 @@ void initjobs(void) {
 struct job *pushjob(struct job *job) {
 	struct joblink *p;
 
-	if (!jobs.free) return NULL;
+	if (!jobs.free) {
+		note("Unable to %s, exceeds %d job limit",
+		     job->suspended ? "suspend job" : "place job in background", MAXJOBS);
+		return NULL;
+	}
 
 	(p = jobs.free)->job = *job;
 	jobs.free = p->next;
@@ -52,18 +56,20 @@ struct job *peekjob(void) {
 	return jobs.active ? &jobs.active->job : NULL;
 }
 
-struct job *searchjobid(pid_t id) {
+struct job *peeksuspendedjob(void) {
 	struct joblink *p;
 
-	for (p = jobs.active; p; p = p->next) if (p->job.id == id) return &p->job;
+	for (p = jobs.active; p; p = p->next) if (p->job.suspended) return &p->job;
+
+	note("No suspended job to run in background");
 
 	return NULL;
 }
 
-struct job *searchjobtype(enum jobtype type) {
+struct job *searchjobid(pid_t id) {
 	struct joblink *p;
 
-	for (p = jobs.active; p; p = p->next) if (p->job.type == type) return &p->job;
+	for (p = jobs.active; p; p = p->next) if (p->job.id == id) return &p->job;
 
 	return NULL;
 }

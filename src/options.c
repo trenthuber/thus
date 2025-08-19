@@ -6,9 +6,7 @@
 #include "input.h"
 #include "utils.h"
 
-int login, interactive, argc;
-char **argv;
-struct context context;
+int login, interactive;
 
 static void usage(char *program, int code) {
 	printf("Usage: %s [file] [-c string] [-hl]\n"
@@ -19,42 +17,43 @@ static void usage(char *program, int code) {
 	exit(code);
 }
 
-void options(void) {
+void options(struct context *context) {
 	int opt, l;
 
-	login = **argv == '-';
+	login = **arglist == '-';
 	interactive = 1;
-	context.input = userinput;
+	context->input = userinput;
 
-	while ((opt = getopt(argc, argv, ":c:hl")) != -1) {
+	while ((opt = getopt(argcount, arglist, ":c:hl")) != -1) {
 		switch (opt) {
 		case 'c':
 			interactive = 0;
-			context.string = optarg;
-			context.input = stringinput;
+			context->string = optarg;
+			context->input = stringinput;
+			arglist[--optind] = ""; // Empty program name when running a string
 			break;
 		case 'h':
-			usage(*argv, EXIT_SUCCESS);
+			usage(*arglist, EXIT_SUCCESS);
 		case 'l':
 			login = 1;
 			break;
 		case ':':
 			note("Expected argument following `-%c'\n", optopt);
-			usage(*argv, EXIT_FAILURE);
+			usage(*arglist, EXIT_FAILURE);
 		case '?':
 		default:
 			note("Unknown command line option `-%c'\n", optopt);
-			usage(*argv, EXIT_FAILURE);
+			usage(*arglist, EXIT_FAILURE);
 		}
 		if (opt == 'c') break;
 	}
-	if (!context.string && argv[optind]) {
+	if (!context->string && arglist[optind]) {
 		interactive = 0;
-		context.script = argv[optind];
-		context.input = scriptinput;
+		context->script = arglist[optind];
+		context->input = scriptinput;
 	}
 	if (!interactive) {
-		argc -= optind;
-		argv += optind;
+		argcount -= optind;
+		arglist += optind;
 	}
 }

@@ -1,1 +1,2 @@
-void applyaliases(struct command *command);
+char *getaliasrhs(char *token);
+char **getalias(char *token);

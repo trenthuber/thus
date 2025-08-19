@@ -1,3 +1,1 @@
-extern int status;
-
-PIPELINE(run);
+int run(struct context *c);

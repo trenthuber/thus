@@ -8,13 +8,14 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "context.h"
 #include "history.h"
 #include "job.h"
 #include "fg.h"
 #include "options.h"
 
-char *home;
-int status;
+int argcount, status;
+char **arglist, *home;
 
 void note(char *fmt, ...) {
 	va_list args;
@@ -35,11 +36,18 @@ void fatal(char *fmt, ...) {
 }
 
 void init(void) {
-	char *shlvlstr, buffer[19 + 1];
+	char buffer[PATH_MAX], *shlvlstr;
+	size_t l;
 	long shlvl;
 
 	if (!(home = getenv("HOME")))
-		fatal("Unable to locate user's home directory, $HOME$ not set");
+		fatal("Unable to query $HOME$");
+	strcpy(buffer, home);
+	l = strlen(buffer);
+	buffer[l + 1] = '\0';
+	buffer[l] = '/';
+	if (setenv("HOME", buffer, 1) == -1 || !(home = getenv("HOME")))
+		fatal("Unable to append trailing slash to $HOME$");
 
 	if (!(shlvlstr = getenv("SHLVL"))) shlvlstr = "0";
 	if ((shlvl = strtol(shlvlstr, NULL, 10)) < 0) shlvl = 0;

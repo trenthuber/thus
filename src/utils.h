@@ -1,5 +1,5 @@
-extern char *home;
-extern int status;
+extern int argcount, status;
+extern char **arglist, *home;
 
 void note(char *fmt, ...);
 void fatal(char *fmt, ...);

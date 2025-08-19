@@ -1,6 +1,6 @@
 struct builtin {
 	char *name;
-	BUILTINSIG((*func));
+	BUILTIN((*func));
 };
 
 extern struct builtin builtins[];

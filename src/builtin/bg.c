@@ -8,7 +8,7 @@
 #include "job.h"
 #include "utils.h"
 
-BUILTINSIG(bg) {
+BUILTIN(bg) {
 	long l;
 	pid_t id;
 	struct job *job;
@@ -23,25 +23,19 @@ BUILTINSIG(bg) {
 			note("Unable to find job %d", id);
 			return EXIT_FAILURE;
 		}
-		if (job->type == BACKGROUND) {
+		if (!job->suspended) {
 			note("Job %d already in background", id);
 			return EXIT_FAILURE;
 		}
-	} else if (!(job = searchjobtype(SUSPENDED))) {
-		note("No suspended jobs to run in background");
-		return EXIT_FAILURE;
-	}
+	} else if (!(job = peeksuspendedjob())) return EXIT_FAILURE;
 	deletejobid(job->id);
 
-	if (!pushjob(job)) {
-		note("Unable to add job to background; too many jobs");
-		return EXIT_FAILURE;
-	}
+	if (!pushjob(job)) return EXIT_FAILURE;
 	if (killpg(job->id, SIGCONT) == -1) {
-		note("Unable to wake up suspended process group %d", job->id);
+		note("Unable to wake up suspended job %d", job->id);
 		return EXIT_FAILURE;
 	}
-	job->type = BACKGROUND;
+	job->suspended = 0;
 
 	return EXIT_SUCCESS;
 }

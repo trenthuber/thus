@@ -12,59 +12,59 @@
 #include "input.h"
 #include "utils.h"
 
-PIPELINE(stringinput) {
+int stringinput(struct context *c) {
 	char *start;
 	size_t l;
 
-	if (!*context->string) {
-		if (context->script && munmap(context->map, context->len) == -1)
-			note("Unable to unmap memory associated with `%s'", context->script);
-		return NULL;
+	if (!*c->string) {
+		if (c->script && munmap(c->map, c->maplen) == -1)
+			note("Unable to unmap memory associated with `%s'", c->script);
+		return 0;
 	}
 
-	start = context->string;
-	while (*context->string && *context->string != '\n') ++context->string;
-	l = context->string - start;
-	if (*context->string == '\n') ++context->string;
+	start = c->string;
+	while (*c->string && *c->string != '\n') ++c->string;
+	l = c->string - start;
+	if (*c->string == '\n') ++c->string;
 	if (l > MAXCHARS) {
 		note("Line too long, exceeds %d character limit", MAXCHARS);
-		return NULL;
+		return 0;
 	}
 
-	strncpy(context->buffer, start, l);
-	context->buffer[l] = ';';
-	context->buffer[l + 1] = '\0';
+	strncpy(c->buffer, start, l);
+	c->buffer[l] = ';';
+	c->buffer[l + 1] = '\0';
 
-	return context;
+	return 1;
 }
 
-PIPELINE(scriptinput) {
+int scriptinput(struct context *c) {
 	int fd;
 	struct stat sstat;
 
-	if ((fd = open(context->script, O_RDONLY)) == -1) {
-		note("Unable to open `%s'", context->script);
-		return NULL;
+	if ((fd = open(c->script, O_RDONLY)) == -1) {
+		note("Unable to open `%s'", c->script);
+		return 0;
 	}
-	if (stat(context->script, &sstat) == -1) {
-		note("Unable to stat `%s'", context->script);
-		return NULL;
+	if (stat(c->script, &sstat) == -1) {
+		note("Unable to stat `%s'", c->script);
+		return 0;
 	}
-	if ((context->len = sstat.st_size) == 0) return NULL;
-	if ((context->map = mmap(NULL, context->len, PROT_READ, MAP_PRIVATE, fd, 0))
+	if ((c->maplen = sstat.st_size) == 0) return 0;
+	if ((c->map = mmap(NULL, c->maplen, PROT_READ, MAP_PRIVATE, fd, 0))
 	    == MAP_FAILED) {
-		note("Unable to memory map `%s'", context->script);
-		return NULL;
+		note("Unable to memory map `%s'", c->script);
+		return 0;
 	}
 	if (close(fd) == -1) {
-		note("Unable to close `%s'", context->script);
-		return NULL;
+		note("Unable to close `%s'", c->script);
+		return 0;
 	}
 
-	context->string = context->map;
-	context->input = stringinput;
+	c->string = c->map;
+	c->input = stringinput;
 
-	return context->input(context);
+	return c->input(c);
 }
 
 static void prompt(void) {
@@ -75,43 +75,42 @@ static void prompt(void) {
 	printf("\r%s ", p);
 }
 
-PIPELINE(userinput) {
+int userinput(struct context *c) {
 	char *start, *cursor, *end;
-	unsigned int c;
+	unsigned int current;
 	int i;
 	size_t oldlen, newlen;
 
-	end = cursor = start = context->buffer;
-	*context->buffer = '\0';
+	end = cursor = start = c->buffer;
+	*c->buffer = '\0';
 	while (start == end) {
 		prompt();
-		while ((c = getchar()) != '\r') switch (c) {
+		while ((current = getchar()) != '\r') switch (current) {
 		default:
-			if (c >= ' ' && c <= '~') {
+			if (current >= ' ' && current <= '~') {
 				if (end - start == MAXCHARS) continue;
 				memmove(cursor + 1, cursor, end - cursor);
-				*cursor++ = c;
+				*cursor++ = current;
 				*++end = '\0';
 
-				putchar(c);
+				putchar(current);
 				fputs(cursor, stdout);
 				for (i = end - cursor; i > 0; --i) putchar('\b');
 			}
 			break;
 		case CTRLC:
 			puts("^C\r");
-			*context->buffer = '\0';
-			return context;
+			return quit(c);
 		case CTRLD:
 			puts("^D\r");
-			return NULL;
+			return 0;
 		case CLEAR:
 			fputs("\033[H\033[J", stdout);
 			prompt();
-			fputs(context->buffer, stdout);
+			fputs(c->buffer, stdout);
 			continue;
 		case ESCAPE:
-			switch ((c = getchar())) {
+			switch ((current = getchar())) {
 			case FORWARD:
 				while (cursor != end && *cursor != ' ') putchar(*cursor++);
 				while (cursor != end && *cursor == ' ') putchar(*cursor++);
@@ -121,17 +120,17 @@ PIPELINE(userinput) {
 				while (cursor != start && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
 				break;
 			case ARROW:
-				switch ((c = getchar())) {
+				switch ((current = getchar())) {
 				case UP:
 				case DOWN:
-					oldlen = strlen(context->buffer);
-					if (!gethistory(c, context->buffer)) continue;
-					newlen = strlen(context->buffer);
+					oldlen = strlen(c->buffer);
+					if (!gethistory(current, c->buffer)) continue;
+					newlen = strlen(c->buffer);
 					end = cursor = start + newlen;
 
 					putchar('\r');
 					prompt();
-					fputs(context->buffer, stdout);
+					fputs(c->buffer, stdout);
 					for (i = oldlen - newlen; i > 0; --i) putchar(' ');
 					for (i = oldlen - newlen; i > 0; --i) putchar('\b');
 
@@ -145,7 +144,7 @@ PIPELINE(userinput) {
 				}
 				break;
 			default:
-				ungetc(c, stdin);
+				ungetc(current, stdin);
 			}
 			break;
 		case BACKSPACE:
@@ -166,15 +165,12 @@ PIPELINE(userinput) {
 	}
 
 	while (*start == ' ') ++start;
-	if (start == end) {
-		*context->buffer = '\0';
-		return context;
-	}
+	if (start == end) return quit(c);
 
-	sethistory(context->buffer);
+	sethistory(c->buffer);
 
 	*end++ = ';';
 	*end = '\0';
 
-	return context;
+	return 1;
 }

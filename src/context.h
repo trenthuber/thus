@@ -2,9 +2,7 @@
 #define MAXCOMMANDS (MAXCHARS + 1) / 2
 #define MAXREDIRECTS (MAXCHARS / 3)
 
-#define PIPELINE(name) struct context *name(struct context *context)
-
-enum access {
+enum {
 	NONE,
 	READ = '<',
 	READWRITE,
@@ -13,14 +11,12 @@ enum access {
 };
 
 struct redirect {
-	enum access mode;
-	int oldfd, newfd;
+	int mode, oldfd, newfd;
 	char *oldname;
-	struct redirect *next;
 };
 
-enum terminator {
-	SEMI = ';',
+enum {
+	SEMI,
 	BG = '&',
 	AND,
 	PIPE = '|',
@@ -28,23 +24,18 @@ enum terminator {
 };
 
 struct command {
-	char **args;
-	struct redirect *r;
-	enum terminator term;
-	int pipe[2];
-	struct command *prev, *next;
+	char name[MAXCHARS + 1];
+	int term, pipe[2];
 };
 
 struct context {
-	struct {
-		char *string, *script;
-		struct {
-			char *map;
-			size_t len;
-		};
-		PIPELINE((*input));
-	};
-	char buffer[MAXCHARS + 1 + 1], *tokens[MAXCOMMANDS + 1];
-	struct redirect redirects[MAXREDIRECTS + 1];
-	struct command commands[1 + MAXCOMMANDS];
+	char *string, *script, *map, buffer[MAXCHARS + 1 + 1], *b,
+	     *tokens[MAXCOMMANDS + 1], **t;
+	size_t maplen;
+	int (*input)(struct context *c), alias;
+	struct redirect redirects[MAXREDIRECTS + 1], *r;
+	struct command current, prev;
 };
+
+int clear(struct context *c);
+int quit(struct context *c);

@@ -13,46 +13,39 @@
 static struct {
 	struct {
 		char lhs[MAXCHARS - 5], *rhs;
-		struct context context;
 	} entries[MAXALIAS + 1];
 	size_t size;
 } aliases;
 
-void applyaliases(struct command *command) {
-	struct command *c;
-	char **end;
-	size_t i, l, a;
-	struct context *context;
+char *getaliasrhs(char *token) {
+	size_t i;
 
-	c = command;
+	for (i = 0; i < aliases.size; ++i)
+		if (strcmp(token, aliases.entries[i].lhs) == 0) return aliases.entries[i].rhs;
 
-	end = c->args;
-	while ((c = c->next)) if (c->args) end = c->args;
-	if (end) while (*end) ++end;
-
-	while ((c = command = command->next)) {
-		if (!command->args) continue;
-		for (i = 0; i < aliases.size; ++i)
-			if (strcmp(aliases.entries[i].lhs, *command->args) == 0) break;
-		if (i == aliases.size) continue;
-		context = &aliases.entries[i].context;
-
-		strcpy(context->buffer, aliases.entries[i].rhs);
-		l = strlen(context->buffer);
-		context->buffer[l + 1] = '\0';
-		context->buffer[l] = ';';
-
-		parse(context);
-
-		for (a = 0; context->tokens[a]; ++a);
-		memmove(command->args + a, command->args + 1,
-		        (end - command->args + 1) * sizeof*command->args);
-		memcpy(command->args, context->tokens, a * sizeof*command->args);
-		while ((c = c->next)) c->args += a - 1;
-	}
+	return NULL;
 }
 
-BUILTINSIG(alias) {
+char **getalias(char *token) {
+	char *rhs;
+	size_t l;
+	static struct context context;
+
+	if (!(rhs = getaliasrhs(token))) return NULL;
+
+	strcpy(context.buffer, rhs);
+	l = strlen(rhs);
+	context.buffer[l + 1] = '\0';
+	context.buffer[l] = ';';
+	context.alias = 1;
+	context.b = context.buffer;
+
+	if (!parse(&context)) return NULL;
+
+	return context.tokens;
+}
+
+BUILTIN(alias) {
 	size_t i;
 	char *lhs;
 
@@ -82,7 +75,7 @@ BUILTINSIG(alias) {
 
 		break;
 	default:
-		puts("Usage: alias [lhs rhs]\r");
+		fputs("Usage: alias [lhs rhs]\r\n", stderr);
 		return EXIT_FAILURE;
 	}
 

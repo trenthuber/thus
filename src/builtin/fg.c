@@ -5,17 +5,22 @@
 #include <sys/errno.h>
 #include <termios.h>
 #include <unistd.h>
+#include <string.h> // XXX
 
 #include "builtin.h"
 #include "job.h"
 #include "utils.h"
 
-static int fgstatus;
+static struct {
+	pid_t id;
+	int status, done;
+} fgpg;
 struct termios canonical;
 static struct termios raw;
 struct sigaction sigchld, sigdfl;
 
 static int setconfig(struct termios *mode) {
+// printf("Setting config to %s\r\n", mode == &raw ? "raw" : "canonical");
 	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
 		note("Unable to set termios config");
 		return 0;
@@ -24,14 +29,22 @@ static int setconfig(struct termios *mode) {
 }
 
 static void sigchldhandler(int sig) {
+	int e;
 	pid_t id;
 	struct job *job;
 
 	(void)sig;
-	while ((id = waitpid(-1, &fgstatus, WNOHANG | WUNTRACED)) > 0)
+	e = errno;
+	while ((id = waitpid(-1, &fgpg.status, WNOHANG | WUNTRACED)) > 0)
 		if ((job = searchjobid(id))) {
-			if (WIFSTOPPED(fgstatus)) job->type = SUSPENDED; else deletejobid(id);
-		} else if (!WIFSTOPPED(fgstatus)) while (waitpid(-id, NULL, 0) != -1);
+			if (WIFSTOPPED(fgpg.status)) job->suspended = 1; else deletejobid(id);
+		} else {
+			fgpg.done = 1;
+			if (WIFSTOPPED(fgpg.status)) continue;
+			if (id != fgpg.id) waitpid(fgpg.id, &fgpg.status, 0);
+			while (waitpid(-fgpg.id, NULL, 0) != -1);
+		}
+	errno = e;
 }
 
 void setsigchld(struct sigaction *act) {
@@ -51,6 +64,7 @@ void initfg(void) {
 }
 
 int setfg(struct job job) {
+// puts("setfg\r");
 	if (!setconfig(&job.config)) return 0;
 	if (tcsetpgrp(STDIN_FILENO, job.id) == -1) {
 		note("Unable to bring job %d to foreground", job.id);
@@ -69,10 +83,11 @@ void waitfg(struct job job) {
 
 	/* SIGCHLD handler is really the function that reaps the foreground process,
 	 * the waitpid() below is just to block the current thread of execution until
-	 * the foreground process has been reaped */
+	 * the foreground process has been reaped. */
+	fgpg.id = job.id;
 	setsigchld(&sigchld);
-	waitpid(job.id, NULL, 0);
-	errno = 0; // waitpid() will set errno
+	while (waitpid(fgpg.id, NULL, 0) && !fgpg.done);
+	fgpg.done = errno = 0;
 	setsigchld(&sigdfl);
 
 	if (sigaction(SIGTTOU, &(struct sigaction){{SIG_IGN}}, NULL) == -1
@@ -84,28 +99,31 @@ void waitfg(struct job job) {
 	}
 	if (tcgetattr(STDIN_FILENO, &job.config) == -1)
 		note("Unable to save termios config of job %d", job.id);
+// puts("waitfg\r");
 	setconfig(&raw);
 
-	if (WIFEXITED(fgstatus)) status = WEXITSTATUS(fgstatus);
-	else if (WIFSIGNALED(fgstatus)) status = WTERMSIG(fgstatus);
+// printf("fgstatus = %d\r\n", fgstatus);
+	if (WIFEXITED(fgpg.status)) status = WEXITSTATUS(fgpg.status);
+	else if (WIFSIGNALED(fgpg.status)) { puts("SIGNAL RECEIVED\r"); status = WTERMSIG(fgpg.status); }
 	else {
-		status = WSTOPSIG(fgstatus);
-		job.type = SUSPENDED;
+		status = WSTOPSIG(fgpg.status);
+		job.suspended = 1;
 		if (!pushjob(&job)) {
-			note("Unable to add job %d to list; too many jobs\r\n"
-				 "Press any key to continue", job.id);
+			note("Press any key to continue");
 			getchar();
 			if (setfg(job)) return waitfg(job);
 			note("Manual intervention required for job %d", job.id);
 		}
 	}
+// printf("status = %d\r\n", status);
 }
 
 void deinitfg(void) {
+// puts("deinitfg");
 	setconfig(&canonical);
 }
 
-BUILTINSIG(fg) {
+BUILTIN(fg) {
 	long l;
 	pid_t id;
 	struct job *job;
@@ -117,12 +135,12 @@ BUILTINSIG(fg) {
 			return EXIT_FAILURE;
 		}
 		if (!(job = searchjobid(id))) {
-			note("Unable to find process group %d", id);
+			note("Unable to find job %d", id);
 			return EXIT_FAILURE;
 		}
 		deletejobid(id);
 	} else if (!(job = pulljob())) {
-		note("No processes to bring into the foreground");
+		note("No job to bring into the foreground");
 		return EXIT_FAILURE;
 	}
 

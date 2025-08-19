@@ -1,87 +1,122 @@
+#include <glob.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/errno.h>
 
+#include "alias.h"
 #include "context.h"
-#include "input.h"
 #include "options.h"
 #include "utils.h"
 
-static void initcommand(struct command *c) {
-	c->args = NULL;
-	c->r = NULL;
-	c->prev = c - 1;
-	c->next = NULL;
-}
-
-PIPELINE(parse) {
-	char *b, **t, *name, *value, *stlend, *p, *end, *env;
-	struct redirect *r, *q;
-	struct command *c;
+int parse(struct context *c) {
+	int globbing, e, offset;
+	char *stlend, *p, *end, *env, term, **sub;
 	long l;
-	int e, offset;
-	
-	if (!context) return NULL;
+	size_t sublen;
+	static glob_t globs;
 
-	b = context->buffer;
-	t = context->tokens;
-	r = context->redirects;
-	c = context->commands + 1;
-	context->commands->next = NULL;
-	*t = value = name = NULL;
-	r->mode = NONE;
-	for (initcommand(c); *b; ++b) switch (*b) {
-	default:
-		if (r->mode) break;
-		if (!c->args) c->args = t;
-		if (!*(b - 1)) {
-			if (!name) *t++ = b; else if (!value) value = b;
-		}
-		break;
+	if (!c->b) {
+		if (!c->input(c)) return 0;
+		c->b = c->buffer;
+	}
+	if (globs.gl_pathc) {
+		globfree(&globs);
+		globs.gl_pathc = 0;
+	}
+	c->t = c->tokens;
+	c->r = c->redirects;
+	c->r->mode = NONE;
+	c->prev = c->current;
+	globbing = 0;
+
+	for (*c->t = c->b; *c->b; ++c->b) switch (*c->b) {
 	case '<':
 	case '>':
-		if (r->mode) {
-			note("File redirections should be separated by spaces");
-			return context;
+		if (c->r->mode) {
+			note("Invalid syntax for file redirection");
+			return quit(c);
 		}
-		if (r - context->redirects == MAXREDIRECTS) {
+		if (c->r - c->redirects == MAXREDIRECTS) {
 			note("Too many file redirects, exceeds %d redirect limit", MAXREDIRECTS);
-			return context;
+			return quit(c);
 		}
-		if (!c->r) c->r = r;
-		if (*(b - 1)) {
-			if (c->args == --t) c->args = NULL;
-			if ((l = strtol(*t, &stlend, 10)) < 0 || l > INT_MAX || stlend != b) {
+		if (*c->t != c->b) {
+			if ((l = strtol(*c->t, &stlend, 10)) < 0 || l > INT_MAX || stlend != c->b) {
 				note("Invalid value for a file redirection");
-				return context;
+				return quit(c);
 			}
-			r->newfd = l;
-		} else r->newfd = *b == '>';
-		r->mode = *b;
-		if (*(b + 1) == '>') {
-			++r->mode;
-			++b;
+			c->r->newfd = l;
+		} else c->r->newfd = *c->b == '>';
+		c->r->mode = *c->b;
+		if (*(c->b + 1) == '>') {
+			++c->r->mode;
+			++c->b;
 		}
-		r->oldname = b + 1;
-		if (*(b + 1) == '&') ++b;
+		c->r->oldname = c->b + 1;
+		if (*(c->b + 1) == '&') ++c->b;
+		break;
+	case '$':
+		p = c->b++;
+		while (*c->b && *c->b != '$') ++c->b;
+		if (!*c->b) {
+			note("Environment variable lacks a terminating `$'");
+			return quit(c);
+		}
+		*c->b++ = '\0';
+		for (end = c->b; *end; ++end);
+
+		l = strtol(p + 1, &stlend, 10);
+		errno = 0;
+		if (stlend == c->b - 1) env = l >= 0 && l < argcount ? arglist[l] : c->b - 1;
+		else if (strcmp(p + 1, "^") == 0) {
+			if (!sprintf(env = (char [12]){0}, "%d", status)) {
+				note("Unable to get previous command status");
+				return quit(c);
+			}
+		} else if (!(env = getenv(p + 1))) {
+			note("Environment variable does not exist");
+			return quit(c);
+		}
+
+		e = strlen(env);
+		offset = e - (c->b - p);
+		memmove(c->b + offset, c->b, end - c->b + 1);
+		strncpy(p, env, e);
+		c->b += offset - 1;
+
+		break;
+	case '~':
+		for (end = c->b; *end; ++end);
+		offset = strlen(home);
+		memmove(c->b + offset, c->b + 1, end - c->b);
+		strncpy(c->b, home, offset);
+		c->b += offset - 1;
+		break;
+	case '[':
+		while (*c->b && *c->b != ']') ++c->b;
+		if (!*c->b) {
+			note("Range in glob left open-ended");
+			return quit(c);
+		}
+	case '*':
+	case '?':
+		globbing = 1;
 		break;
 	case '"':
-		if (!*(b - 1)) {
-			if (!name) *t++ = b; else if (!value) value = b;
-		}
-		for (end = (p = b) + 1, b = NULL; *end; ++end) {
-			if (!b && *end == '"') b = end;
+		for (end = (p = c->b) + 1, c->b = NULL; *end; ++end) if (!c->b) {
+			if (*end == '"') c->b = end;
 			if (*end == '\\') ++end;
 		}
-		if (!b) {
+		if (!c->b) {
 			note("Quote left open-ended");
-			return context;
+			return quit(c);
 		}
 		memmove(p, p + 1, end-- - p);
-		--b;
+		--c->b;
 
-		while (p != b) if (*p++ == '\\') {
+		while (p != c->b) if (*p++ == '\\') {
 			switch (*p) {
 			case 't':
 				*p = '\t';
@@ -96,116 +131,92 @@ PIPELINE(parse) {
 				*p = '\n';
 				break;
 			}
-			memmove(p - 1, p, end-- - p);
-			--b;
+			memmove(p - 1, p, end-- - p + 1);
+			--c->b;
 		}
-		*end = '\0';
-		memmove(p, p + 1, end - p);
-		--b;
+		memmove(p, p + 1, end-- - p);
+		--c->b;
 
-		break;
-	case '=':
-		name = *--t;
-		*b = '\0';
-		break;
-	case '$':
-		if (!*(b - 1)) {
-			if (!name) *t++ = b; else if (!value) value = b;
-		}
-		p = b++;
-		while (*b && *b != '$') ++b;
-		if (!*b) {
-			note("Environment variable lacks a terminating `$'");
-			return context;
-		}
-		*b++ = '\0';
-		for (end = b; *end; ++end);
-
-		l = strtol(p + 1, &stlend, 10);
-		if (stlend == b - 1) env = l >= 0 && l < argc ? argv[l] : b - 1;
-		else if (strcmp(p + 1, "^") == 0) {
-			if (!sprintf(env = (char [12]){0}, "%d", status)) {
-				note("Unable to get previous command status");
-				return context;
-			}
-		} else if ((env = getenv(p + 1)) == NULL) {
-			note("Environment variable does not exist");
-			return context;
-		}
-
-		e = strlen(env);
-		offset = e - (b - p);
-		memmove(b + offset, b, end - b + 1);
-		strncpy(p, env, e);
-		b += offset - 1;
-
-		break;
-	case '~':
-		if (!*(b - 1)) {
-			if (!name) *t++ = b; else if (!value) value = b;
-		}
-		for (end = b; *end; ++end);
-		offset = strlen(home);
-		memmove(b + offset, b + 1, end - b);
-		strncpy(b, home, offset);
-		b += offset - 1;
 		break;
 	case '#':
-		*(b + 1) = '\0';
+		*(c->b + 1) = '\0';
 	case '&':
 	case '|':
 	case ';':
-		if (name && *c->args == name) c->args = NULL;
-		if (c->args || c->r) {
-			if ((c->term = *b) == *(b + 1) && (*b == '&' || *b == '|')) {
-				++c->term;
-				*b++ = '\0';
-			}
-			*b = '\0';
-
-			if (r->mode) {
-				r++->next = NULL;
-				r->mode = NONE;
-			} else if (c->r) (r - 1)->next = NULL;
-			for (q = c->r; q; q = q->next) if (*q->oldname == '&') {
-				if ((l = strtol(++q->oldname, &stlend, 10)) < 0 || l > INT_MAX || *stlend) {
-					note("Incorrect syntax for file redirection");
-					return context;
-				}
-				q->oldfd = l;
-				q->oldname = NULL;
-			}
-
-			initcommand(c = c->next = c + 1);
-			*t++ = NULL;
-		}
 	case ' ':
-		*b = '\0';
-		if (value) {
-			if (setenv(name, value, 1) == -1) {
-				note("Unable to set environment variable");
-				return context;
+		term = *c->b;
+		*c->b = '\0';
+
+		if (c->r->mode) {
+			switch (*c->r->oldname) {
+			case '&':
+				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0 || l > INT_MAX || *stlend) {
+				case '\0':
+					note("Invalid syntax for file redirection");
+					return quit(c);
+				}
+				c->r->oldfd = l;
+				c->r->oldname = NULL;
 			}
-			value = name = NULL;
+			(++c->r)->mode = NONE;
+			globbing = 0;
+
+			*c->t = c->b;
+		} else if (!c->alias && c->t == c->tokens && (sub = getalias(*c->tokens)) || globbing) {
+			if (globbing) {
+				switch (glob(*c->t, GLOB_APPEND | GLOB_MARK, NULL, &globs)) {
+				case GLOB_NOMATCH:
+					note("No matches found for %s", *c->t);
+					return quit(c);
+				case GLOB_NOSPACE:
+					fatal("Memory allocation");
+				}
+				sublen = globs.gl_matchc;
+				sub = globs.gl_pathv + globs.gl_pathc - sublen;
+				globbing = 0;
+			} else for (sublen = 0; sub[sublen]; ++sublen);
+
+			memcpy(c->t, sub, sublen * sizeof*c->t);
+			c->t += sublen;
+			*c->t = c->b;
+		} else if (*c->t != c->b) ++c->t;
+
+		if (term != ' ') {
+			if (c->t != c->tokens) {
+				*c->t = NULL;
+				strcpy(c->current.name, *c->tokens);
+			} else c->t = NULL;
+			if (c->r == c->redirects) c->r = NULL;
+			switch (term) {
+			case '&':
+			case '|':
+				c->current.term = term;
+				if (*(c->b + 1) == term) {
+					++c->current.term;
+					*++c->b = '\0';
+				}
+				break;
+			case ';':
+				c->current.term = SEMI;
+			}
+			++c->b;
+
+			return 1;
 		}
-		if (r->mode) {
-			r = r->next = r + 1;
-			r->mode = NONE;
-		}
+		*c->t = c->b + 1;
 	}
 
-	(--c)->next = NULL;
-	switch (c->term) {
+	switch (c->current.term) {
 	case AND:
 	case PIPE:
 	case OR:
 		note("Expected another command");
-		return context;
-	default:
-		break;
+		return quit(c);
 	}
 
-	context->commands->next = context->commands + 1;
+	if (c->t == c->tokens) c->t = NULL;
+	if (c->r == c->redirects) c->r = NULL;
+	c->b = NULL;
 
-	return context;
+	return 1;
 }

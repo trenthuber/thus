@@ -14,6 +14,6 @@ enum {
 	DEL = '\177',
 };
 
-PIPELINE(stringinput);
-PIPELINE(scriptinput);
-PIPELINE(userinput);
+int stringinput(struct context *c);
+int scriptinput(struct context *c);
+int userinput(struct context *c);
