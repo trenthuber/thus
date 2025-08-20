@@ -17,8 +17,8 @@ int main(int argc, char **argv) {
 
 	init();
 
-	if (login) config(".ashlogin");
-	if (interactive) config(".ashrc");
+	if (login) config(".thuslogin");
+	if (interactive) config(".thusrc");
 
 	while (run(&context));
 

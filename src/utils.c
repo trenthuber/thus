@@ -40,14 +40,20 @@ void init(void) {
 	size_t l;
 	long shlvl;
 
-	if (!(home = getenv("HOME")))
-		fatal("Unable to query $HOME$");
+	if (!(home = getenv("HOME"))) fatal("Unable to find home directory");
 	strcpy(buffer, home);
 	l = strlen(buffer);
 	buffer[l + 1] = '\0';
 	buffer[l] = '/';
 	if (setenv("HOME", buffer, 1) == -1 || !(home = getenv("HOME")))
 		fatal("Unable to append trailing slash to $HOME$");
+
+	if (!getcwd(buffer, PATH_MAX)) fatal("Unable to find current directory");
+	l = strlen(buffer);
+	buffer[l + 1] = '\0';
+	buffer[l] = '/';
+	if (setenv("PWD", buffer, 1) == -1)
+		fatal("Unable to append trailing slash to $PWD$");
 
 	if (!(shlvlstr = getenv("SHLVL"))) shlvlstr = "0";
 	if ((shlvl = strtol(shlvlstr, NULL, 10)) < 0) shlvl = 0;

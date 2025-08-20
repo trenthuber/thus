@@ -13,7 +13,11 @@ BUILTIN(bg) {
 	pid_t id;
 	struct job *job;
 
-	if (argc > 1) {
+	switch (argc) {
+	case 1:
+		if (!(job = peeksuspendedjob())) return EXIT_FAILURE;
+		break;
+	case 2:
 		errno = 0;
 		if ((l = strtol(argv[1], NULL, 10)) == LONG_MAX && errno || l <= 0) {
 			note("Invalid job id %ld", l);
@@ -27,7 +31,10 @@ BUILTIN(bg) {
 			note("Job %d already in background", id);
 			return EXIT_FAILURE;
 		}
-	} else if (!(job = peeksuspendedjob())) return EXIT_FAILURE;
+		break;
+	default:
+		return usage(argv[0], "[pgid]");
+	}
 	deletejobid(job->id);
 
 	if (!pushjob(job)) return EXIT_FAILURE;

@@ -80,10 +80,7 @@ BUILTIN(which) {
 	int type;
 	char *result;
 
-	if (argc != 2) {
-		fputs("Usage: which name\r\n", stderr);
-		return EXIT_FAILURE;
-	}
+	if (argc != 2) return usage(argv[0], "name");
 
 	if (!(result = getpathtype(argv[1], &type))) {
 		printf("%s not found\r\n", argv[1]);

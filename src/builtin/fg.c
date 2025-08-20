@@ -5,7 +5,6 @@
 #include <sys/errno.h>
 #include <termios.h>
 #include <unistd.h>
-#include <string.h> // XXX
 
 #include "builtin.h"
 #include "job.h"
@@ -20,7 +19,6 @@ static struct termios raw;
 struct sigaction sigchld, sigdfl;
 
 static int setconfig(struct termios *mode) {
-// printf("Setting config to %s\r\n", mode == &raw ? "raw" : "canonical");
 	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
 		note("Unable to set termios config");
 		return 0;
@@ -64,7 +62,6 @@ void initfg(void) {
 }
 
 int setfg(struct job job) {
-// puts("setfg\r");
 	if (!setconfig(&job.config)) return 0;
 	if (tcsetpgrp(STDIN_FILENO, job.id) == -1) {
 		note("Unable to bring job %d to foreground", job.id);
@@ -99,13 +96,10 @@ void waitfg(struct job job) {
 	}
 	if (tcgetattr(STDIN_FILENO, &job.config) == -1)
 		note("Unable to save termios config of job %d", job.id);
-// puts("waitfg\r");
 	setconfig(&raw);
 
-// printf("fgstatus = %d\r\n", fgstatus);
 	if (WIFEXITED(fgpg.status)) status = WEXITSTATUS(fgpg.status);
-	else if (WIFSIGNALED(fgpg.status)) { puts("SIGNAL RECEIVED\r"); status = WTERMSIG(fgpg.status); }
-	else {
+	else if (WIFSTOPPED(fgpg.status)) {
 		status = WSTOPSIG(fgpg.status);
 		job.suspended = 1;
 		if (!pushjob(&job)) {
@@ -114,12 +108,10 @@ void waitfg(struct job job) {
 			if (setfg(job)) return waitfg(job);
 			note("Manual intervention required for job %d", job.id);
 		}
-	}
-// printf("status = %d\r\n", status);
+	} else status = WTERMSIG(fgpg.status);
 }
 
 void deinitfg(void) {
-// puts("deinitfg");
 	setconfig(&canonical);
 }
 
@@ -128,7 +120,14 @@ BUILTIN(fg) {
 	pid_t id;
 	struct job *job;
 
-	if (argc > 1) {
+	switch (argc) {
+	case 1:
+		if (!(job = pulljob())) {
+			note("No job to bring into the foreground");
+			return EXIT_FAILURE;
+		}
+		break;
+	case 2:
 		errno = 0;
 		if ((l = strtol(argv[1], NULL, 10)) == LONG_MAX && errno || l <= 0) {
 			note("Invalid process group id %ld", l);
@@ -139,9 +138,9 @@ BUILTIN(fg) {
 			return EXIT_FAILURE;
 		}
 		deletejobid(id);
-	} else if (!(job = pulljob())) {
-		note("No job to bring into the foreground");
-		return EXIT_FAILURE;
+		break;
+	default:
+		return usage(argv[0], "[pgid]");
 	}
 
 	if (!setfg(*job)) return EXIT_FAILURE;

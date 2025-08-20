@@ -8,14 +8,14 @@ int main(void) {
 
 	build("builtin/");
 
-	buildfiles((struct cbsfile []){{"../bin/ash", NONE, 'x'},
+	buildfiles((struct cbsfile []){{"../bin/thus", NONE, 'x'},
 
 	                               {"context", NONE},
 	                               {"history", NONE},
 	                               {"input", NONE},
 	                               {"job", NONE},
 	                               {"main", BUILTINS},
-	                               {"options", NONE},
+	                               {"options", BUILTINS},
 	                               {"parse", BUILTINS},
 	                               {"run", BUILTINS},
 	                               {"utils", BUILTINS},

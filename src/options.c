@@ -2,23 +2,21 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "builtin.h"
 #include "context.h"
 #include "input.h"
 #include "utils.h"
 
 int login, interactive;
 
-static void usage(char *program, int code) {
-	printf("Usage: %s [file] [-c string] [-hl]\n"
-	       "    <file> ...      Run script\n"
-	       "    -c <string> ... Run commands\n"
-	       "    -h              Show this help message\n"
-	       "    -l              Run as a login shell\n", program);
-	exit(code);
-}
-
 void options(struct context *context) {
 	int opt, l;
+	char *message = "[file | -c string] [arg ...] [-hl]\n"
+	                "    <file> [arg ...]      Run script with args\n"
+	                "    -c <string> [arg ...] Run string with args\n"
+	                "    -h                    Show this help message\n"
+	                "    -l                    Run as a login shell\n";
+
 
 	login = **arglist == '-';
 	interactive = 1;
@@ -33,17 +31,18 @@ void options(struct context *context) {
 			arglist[--optind] = ""; // Empty program name when running a string
 			break;
 		case 'h':
-			usage(*arglist, EXIT_SUCCESS);
+			usage(arglist[0], message);
+			exit(EXIT_SUCCESS);
 		case 'l':
 			login = 1;
 			break;
 		case ':':
 			note("Expected argument following `-%c'\n", optopt);
-			usage(*arglist, EXIT_FAILURE);
+			exit(usage(arglist[0], message));
 		case '?':
 		default:
 			note("Unknown command line option `-%c'\n", optopt);
-			usage(*arglist, EXIT_FAILURE);
+			exit(usage(arglist[0], message));
 		}
 		if (opt == 'c') break;
 	}

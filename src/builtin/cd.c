@@ -1,27 +1,40 @@
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "builtin.h"
 #include "utils.h"
 
 BUILTIN(cd) {
-	char *path;
+	char *path, buffer[PATH_MAX + 1];
+	size_t l;
 
-	if (argc > 2) {
-		fputs("Usage: cd [directory]\r\n", stderr);
-		return EXIT_FAILURE;
+	switch (argc) {
+	case 1:
+		path = home;
+		break;
+	case 2:
+		if (!realpath(argv[1], path = buffer)) {
+			note(argv[1]);
+			return EXIT_FAILURE;
+		}
+		l = strlen(path);
+		path[l + 1] = '\0';
+		path[l] = '/';
+		break;
+	default:
+		return usage(argv[0], "[directory]");
 	}
-
-	path = argc == 1 ? home : argv[1];
 
 	if (chdir(path) == -1) {
-		note("Unable to change directory to `%s'", path);
+		note(path);
 		return EXIT_FAILURE;
 	}
 
-	if (setenv("PWD", path, 1) == -1) { // TODO: Slash-terminate path
-		note("Unable to change $PWD$ to `%s'", path);
+	if (setenv("PWD", path, 1) == -1) {
+		note("Unable to set $PWD$");
 		return EXIT_FAILURE;
 	}
 

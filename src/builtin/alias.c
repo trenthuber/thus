@@ -75,8 +75,7 @@ BUILTIN(alias) {
 
 		break;
 	default:
-		fputs("Usage: alias [lhs rhs]\r\n", stderr);
-		return EXIT_FAILURE;
+		return usage(argv[0], "[lhs rhs]");
 	}
 
 	return EXIT_SUCCESS;
