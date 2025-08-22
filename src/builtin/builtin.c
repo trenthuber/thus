@@ -20,6 +20,6 @@ int isbuiltin(char **args) {
 }
 
 int usage(char *program, char *options) {
-	fprintf(stderr, "Usage: %s %s\r\n", program, options);
+	fprintf(stderr, "Usage: %s %s\n", program, options);
 	return EXIT_FAILURE;
 }

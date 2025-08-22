@@ -11,10 +11,10 @@
 #include "utils.h"
 
 int parse(struct context *c) {
-	int globbing, e, offset;
+	int globbing, e, offset, globflags;
+	size_t prevsublen, sublen;
 	char *stlend, *p, *end, *env, term, **sub;
 	long l;
-	size_t sublen;
 	static glob_t globs;
 
 	if (!c->b) {
@@ -29,7 +29,7 @@ int parse(struct context *c) {
 	c->r = c->redirects;
 	c->r->mode = NONE;
 	c->prev = c->current;
-	globbing = 0;
+	prevsublen = globbing = 0;
 
 	for (*c->t = c->b; *c->b; ++c->b) switch (*c->b) {
 	case '<':
@@ -164,15 +164,18 @@ int parse(struct context *c) {
 			*c->t = c->b;
 		} else if (!c->alias && c->t == c->tokens && (sub = getalias(*c->tokens)) || globbing) {
 			if (globbing) {
-				switch (glob(*c->t, GLOB_APPEND | GLOB_MARK, NULL, &globs)) {
+				globflags = GLOB_MARK;
+				if (prevsublen) globflags |= GLOB_APPEND;
+				switch (glob(*c->t, globflags, NULL, &globs)) {
 				case GLOB_NOMATCH:
 					note("No matches found for %s", *c->t);
 					return quit(c);
 				case GLOB_NOSPACE:
 					fatal("Memory allocation");
 				}
-				sublen = globs.gl_matchc;
-				sub = globs.gl_pathv + globs.gl_pathc - sublen;
+				sublen = globs.gl_pathc - prevsublen;
+				sub = globs.gl_pathv + prevsublen;
+				prevsublen = globs.gl_pathc;
 				globbing = 0;
 			} else for (sublen = 0; sub[sublen]; ++sublen);
 

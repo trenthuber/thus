@@ -14,10 +14,7 @@ BUILTIN(source) {
 	int c;
 	char **v;
 	
-	if (argc == 1) {
-		fputs("Usage: source file [args ...]\r\n", stderr);
-		return EXIT_FAILURE;
-	}
+	if (argc == 1) return usage(argv[0], "file [args ...]");
 
 	context = (struct context){0};
 	context.script = argv[1];

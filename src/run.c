@@ -7,10 +7,11 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+#include <stdio.h> // XXX
 
 #include "builtin.h"
 #include "context.h"
-#include "job.h"
+#include "bg.h"
 #include "fg.h"
 #include "parse.h"
 #include "utils.h"
@@ -73,17 +74,23 @@ int run(struct context *c) {
 	int islist, ispipe, ispipestart, ispipeend;
 	char *path;
 	pid_t cpid, jobid;
-	struct job *p, job;
+	static pid_t pipeid;
 
-	setsigchld(&sigchld);
+	setsigchld(&actbg);
 	if (!parse(c)) return 0;
-	setsigchld(&sigdfl);
-
+	setsigchld(&actdefault);
 	islist = c->prev.term > BG || c->current.term > BG;
 	if (c->t) {
+		if (c->current.term == BG && fullbg()) {
+			note("Unable to place job in background, too many background jobs",
+			     c->current.name);
+			return quit(c);
+		}
 		if (!(path = getpath(c->current.name))) {
 			note("Couldn't find `%s' command", c->current.name);
-			if (c->prev.term == PIPE) closepipe(c->prev);
+			if (c->prev.term == PIPE) {
+				killpg(pipeid, SIGKILL);
+			}
 			return quit(c);
 		}
 
@@ -97,7 +104,7 @@ int run(struct context *c) {
 				if (!ispipestart) closepipe(c->prev);
 				return quit(c);
 			}
-			if ((jobid = cpid = fork()) == -1) {
+			if ((cpid = fork()) == -1) {
 				note("Unable to fork child process");
 				return quit(c);
 			} else if (cpid == 0) {
@@ -113,15 +120,8 @@ int run(struct context *c) {
 				}
 				exec(path, c);
 			}
-			if (!ispipestart) {
-				closepipe(c->prev);
-				if (!(p = (ispipeend ? pulljob : peekjob)())) {
-					note("Unable to %s pipeline job from background",
-					     ispipeend ? "remove" : "get");
-					return quit(c);
-				}
-				jobid = p->id;
-			}
+			if (ispipestart) pipeid = cpid;
+			jobid = pipeid;
 		} else if (!c->r && isbuiltin(c->tokens)) cpid = 0;
 		else if ((jobid = cpid = fork()) == -1) {
 			note("Unable to fork child process");
@@ -137,16 +137,11 @@ int run(struct context *c) {
 				}
 				return quit(c);
 			}
-			job = (struct job){.id = jobid, .config = canonical};
 			if (ispipestart || c->current.term == BG) {
-				if (!pushjob(&job)) {
-					if (ispipestart) closepipe(c->current);
-					return quit(c);
-				}
-			} else if (c->current.term != PIPE) {
-				if (!setfg(job)) return quit(c);
-				waitfg(job);
+				pushid(jobid);
+				return 1;
 			}
+			if (c->current.term != PIPE && !runfg(jobid)) return quit(c);
 		}
 
 		if (status != EXIT_SUCCESS) {
@@ -155,11 +150,11 @@ int run(struct context *c) {
 		} else if (c->current.term == OR) return clear(c);
 	} else {
 		if (islist) {
-			if (c->prev.term == PIPE) closepipe(c->prev);
+			if (c->prev.term == PIPE) killpg(pipeid, SIGKILL);
 			note("Expected command");
 			return quit(c);
 		}
-		if (c->r) return 1;
+		if (!c->r) return 1;
 
 		if ((cpid = fork()) == -1) {
 			note("Unable to fork child process");

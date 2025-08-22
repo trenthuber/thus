@@ -8,10 +8,10 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "bg.h"
 #include "context.h"
-#include "history.h"
-#include "job.h"
 #include "fg.h"
+#include "history.h"
 #include "options.h"
 
 int argcount, status;
@@ -22,7 +22,6 @@ void note(char *fmt, ...) {
 	va_start(args, fmt);
 	(errno ? vwarn : vwarnx)(fmt, args);
 	va_end(args);
-	putc('\r', stderr);
 	errno = 0;
 }
 
@@ -31,7 +30,6 @@ void fatal(char *fmt, ...) {
 	va_start(args, fmt);
 	(errno ? vwarn : vwarnx)(fmt, args);
 	va_end(args);
-	putc('\r', stderr);
 	exit(EXIT_FAILURE);
 }
 
@@ -62,7 +60,7 @@ void init(void) {
 		note("Unable to update $SHLVL$ environment variable");
 
 	initfg();
-	initjobs();
+	initbg();
 	if (interactive) inithistory();
 }
 
@@ -84,5 +82,6 @@ char *catpath(char *dir, char *filename, char *buffer) {
 
 void deinit(void) {
 	if (interactive) deinithistory();
+	deinitbg();
 	deinitfg();
 }

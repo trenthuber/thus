@@ -13,7 +13,6 @@ int main(void) {
 	                               {"context", NONE},
 	                               {"history", NONE},
 	                               {"input", NONE},
-	                               {"job", NONE},
 	                               {"main", BUILTINS},
 	                               {"options", BUILTINS},
 	                               {"parse", BUILTINS},

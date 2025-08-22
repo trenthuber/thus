@@ -3,20 +3,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/errno.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 
+#include "bg.h"
 #include "builtin.h"
-#include "job.h"
+#include "context.h"
+#include "input.h"
 #include "utils.h"
 
 static struct {
 	pid_t id;
 	int status, done;
-} fgpg;
+} fgjob;
 struct termios canonical;
 static struct termios raw;
-struct sigaction sigchld, sigdfl;
+struct sigaction actbg, actdefault;
+static struct sigaction actall, actignore;
 
 static int setconfig(struct termios *mode) {
 	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
@@ -26,22 +30,21 @@ static int setconfig(struct termios *mode) {
 	return 1;
 }
 
-static void sigchldhandler(int sig) {
-	int e;
+static void waitall(int sig) {
+	int e, s;
 	pid_t id;
-	struct job *job;
 
-	(void)sig;
 	e = errno;
-	while ((id = waitpid(-1, &fgpg.status, WNOHANG | WUNTRACED)) > 0)
-		if ((job = searchjobid(id))) {
-			if (WIFSTOPPED(fgpg.status)) job->suspended = 1; else deletejobid(id);
-		} else {
-			fgpg.done = 1;
-			if (WIFSTOPPED(fgpg.status)) continue;
-			if (id != fgpg.id) waitpid(fgpg.id, &fgpg.status, 0);
-			while (waitpid(-fgpg.id, NULL, 0) != -1);
+	while ((id = waitpid(-fgjob.id, &s, WNOHANG | WUNTRACED)) > 0) {
+		if (id == fgjob.id) fgjob.status = s;
+		if (WIFSTOPPED(s)) {
+			fgjob.status = s;
+			fgjob.done = 1;
+			break;
 		}
+	}
+	if (id == -1) fgjob.done = 1;
+	waitbg(sig);
 	errno = e;
 }
 
@@ -53,62 +56,65 @@ void setsigchld(struct sigaction *act) {
 void initfg(void) {
 	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
 		fatal("Unable to get default termios config");
-	cfmakeraw(&raw);
+	raw = canonical;
+	raw.c_lflag &= ~(ICANON | ECHO | ISIG);
 	if (!setconfig(&raw)) exit(EXIT_FAILURE);
 
-	sigchld.sa_handler = sigchldhandler;
-	sigdfl.sa_handler = SIG_DFL;
-	setsigchld(&sigchld);
+	actbg.sa_handler = waitbg;
+	actall.sa_handler = waitall;
+	actdefault.sa_handler = SIG_DFL;
+	actignore.sa_handler = SIG_IGN;
 }
 
-int setfg(struct job job) {
+int runfg(pid_t id) {
+	struct bgjob job;
+
+	if (!searchbg(id, &job)) job = (struct bgjob){.id = id, .config = canonical};
 	if (!setconfig(&job.config)) return 0;
-	if (tcsetpgrp(STDIN_FILENO, job.id) == -1) {
-		note("Unable to bring job %d to foreground", job.id);
+	if (tcsetpgrp(STDIN_FILENO, id) == -1) {
+		note("Unable to bring job %d to foreground", id);
 		setconfig(&raw);
 		return 0;
 	}
-	if (killpg(job.id, SIGCONT) == -1) {
-		note("Unable to wake up job %d", job.id);
+	if (killpg(id, SIGCONT) == -1) {
+		note("Unable to wake up job %d", id);
 		return 0;
 	}
-	return 1;
-}
-
-void waitfg(struct job job) {
-	struct sigaction sigign;
+	removeid(id);
 
 	/* SIGCHLD handler is really the function that reaps the foreground process,
 	 * the waitpid() below is just to block the current thread of execution until
 	 * the foreground process has been reaped. */
-	fgpg.id = job.id;
-	setsigchld(&sigchld);
-	while (waitpid(fgpg.id, NULL, 0) && !fgpg.done);
-	fgpg.done = errno = 0;
-	setsigchld(&sigdfl);
+	fgjob.id = id;
+	setsigchld(&actall);
+	while (!fgjob.done) sigsuspend(&actall.sa_mask);
+	setsigchld(&actdefault);
+	fgjob.done = errno = 0;
 
-	if (sigaction(SIGTTOU, &(struct sigaction){{SIG_IGN}}, NULL) == -1
+	if (sigaction(SIGTTOU, &actignore, NULL) == -1
 	    || tcsetpgrp(STDIN_FILENO, getpgrp()) == -1
-	    || sigaction(SIGTTOU, &sigdfl, NULL) == -1) {
+	    || sigaction(SIGTTOU, &actdefault, NULL) == -1) {
 		note("Unable to reclaim foreground; terminating");
 		deinit();
 		exit(EXIT_FAILURE);
 	}
 	if (tcgetattr(STDIN_FILENO, &job.config) == -1)
-		note("Unable to save termios config of job %d", job.id);
+		note("Unable to save termios config of job %d", id);
 	setconfig(&raw);
 
-	if (WIFEXITED(fgpg.status)) status = WEXITSTATUS(fgpg.status);
-	else if (WIFSTOPPED(fgpg.status)) {
-		status = WSTOPSIG(fgpg.status);
+	if (WIFEXITED(fgjob.status)) status = WEXITSTATUS(fgjob.status);
+	else if (WIFSTOPPED(fgjob.status)) {
+		status = WSTOPSIG(fgjob.status);
 		job.suspended = 1;
-		if (!pushjob(&job)) {
-			note("Press any key to continue");
+		if (!pushbg(job)) {
+			note("Unable to suspend current process, too many background jobs\n"
+			     "(Press any key to continue)");
 			getchar();
-			if (setfg(job)) return waitfg(job);
-			note("Manual intervention required for job %d", job.id);
+			return runfg(id);
 		}
-	} else status = WTERMSIG(fgpg.status);
+	} else status = WTERMSIG(fgjob.status);
+	
+	return 1;
 }
 
 void deinitfg(void) {
@@ -116,16 +122,17 @@ void deinitfg(void) {
 }
 
 BUILTIN(fg) {
+	struct bgjob job;
 	long l;
 	pid_t id;
-	struct job *job;
 
 	switch (argc) {
 	case 1:
-		if (!(job = pulljob())) {
+		if (!peekbg(&job)) {
 			note("No job to bring into the foreground");
 			return EXIT_FAILURE;
 		}
+		id = job.id;
 		break;
 	case 2:
 		errno = 0;
@@ -133,18 +140,17 @@ BUILTIN(fg) {
 			note("Invalid process group id %ld", l);
 			return EXIT_FAILURE;
 		}
-		if (!(job = searchjobid(id))) {
+		id = (pid_t)l;
+		if (!searchbg(id, NULL)) {
 			note("Unable to find job %d", id);
 			return EXIT_FAILURE;
 		}
-		deletejobid(id);
 		break;
 	default:
 		return usage(argv[0], "[pgid]");
 	}
 
-	if (!setfg(*job)) return EXIT_FAILURE;
-	waitfg(*job);
+	if (!runfg(id)) return EXIT_FAILURE;
 
 	return EXIT_SUCCESS;
 }

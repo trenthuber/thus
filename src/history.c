@@ -35,14 +35,14 @@ void inithistory(void) {
 	if (fclose(file) == EOF) fatal("Unable to close history file");
 }
 
-int gethistory(char direction, char *buffer) {
-	if (history.c == (direction == UP ? history.b : history.t)) return 0;
+int gethistory(int back, char *buffer) {
+	if (history.c == (back ? history.b : history.t)) return 0;
 
 	// Save the most recently modified history entry at the top of the list
 	if (strcmp(history.entries[history.c], buffer) != 0)
 		strcpy(history.entries[history.t], buffer);
 
-	strcpy(buffer, history.entries[direction == UP ? DEC(c) : INC(c)]);
+	strcpy(buffer, history.entries[back ? DEC(c) : INC(c)]);
 
 	return 1;
 }

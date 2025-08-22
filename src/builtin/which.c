@@ -83,13 +83,13 @@ BUILTIN(which) {
 	if (argc != 2) return usage(argv[0], "name");
 
 	if (!(result = getpathtype(argv[1], &type))) {
-		printf("%s not found\r\n", argv[1]);
+		printf("%s not found\n", argv[1]);
 		return EXIT_SUCCESS;
 	}
 	
 	fputs(result, stdout);
 	if (type == BUILTIN) fputs(" is built-in", stdout);
-	puts("\r");
+	putchar('\n');
 
 	return EXIT_SUCCESS;
 }

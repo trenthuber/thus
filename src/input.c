@@ -12,6 +12,24 @@
 #include "input.h"
 #include "utils.h"
 
+enum {
+	CTRLC = '\003',
+	CTRLD,
+	CLEAR = '\014',
+	ESCAPE = '\033',
+
+	// See ESCAPE case in userinput()
+	ALT = '2' + 1,
+
+	UP = 'A',
+	DOWN,
+	RIGHT,
+	LEFT,
+	FORWARD = 'f',
+	BACKWARD = 'b',
+	DEL = '\177',
+};
+
 int stringinput(struct context *c) {
 	char *start;
 	size_t l;
@@ -72,23 +90,22 @@ static void prompt(void) {
 
 	if (!(p = getenv("PROMPT")) && setenv("PROMPT", p = ">", 1) == -1)
 		note("Unable to update $PROMPT$ environment variable");
-	printf("\r%s ", p);
+	printf("%s ", p);
 }
 
 int userinput(struct context *c) {
 	char *start, *cursor, *end;
-	unsigned int current;
-	int i;
+	int current, i;
 	size_t oldlen, newlen;
 
+	clear(c);
 	end = cursor = start = c->buffer;
-	*c->buffer = '\0';
 	while (start == end) {
 		prompt();
-		while ((current = getchar()) != '\r') switch (current) {
+		while ((current = getchar()) != '\n') switch (current) {
 		default:
 			if (current >= ' ' && current <= '~') {
-				if (end - start == MAXCHARS) continue;
+				if (end - start == MAXCHARS) break;
 				memmove(cursor + 1, cursor, end - cursor);
 				*cursor++ = current;
 				*++end = '\0';
@@ -99,32 +116,41 @@ int userinput(struct context *c) {
 			}
 			break;
 		case CTRLC:
-			puts("^C\r");
+			puts("^C");
 			return quit(c);
 		case CTRLD:
-			puts("^D\r");
+			puts("^D");
 			return 0;
 		case CLEAR:
 			fputs("\033[H\033[J", stdout);
 			prompt();
 			fputs(c->buffer, stdout);
-			continue;
+			break;
+
+			/* This is a very minimal way to handle arrow keys. All modifiers except for
+			 * the ALT key are processed but ignored.
+			 *
+			 * Reference:
+			 * https://en.wikipedia.org/wiki/ANSI_escape_code#Terminal_input_sequences */
 		case ESCAPE:
-			switch ((current = getchar())) {
-			case FORWARD:
-				while (cursor != end && *cursor != ' ') putchar(*cursor++);
-				while (cursor != end && *cursor == ' ') putchar(*cursor++);
-				break;
-			case BACKWARD:
-				while (cursor != start && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
-				while (cursor != start && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
-				break;
-			case ARROW:
-				switch ((current = getchar())) {
+			if ((current = getchar()) == '[') {
+				while ((current = getchar()) >= '0' && current <= '9');
+				if (current == ';') {
+					if ((current = getchar()) == ALT) switch ((current = getchar())) {
+					case LEFT:
+						current = BACKWARD;
+						break;
+					case RIGHT:
+						current = FORWARD;
+						break;
+					} else if ((current = getchar()) >= '0' && current <= '6')
+						current = getchar();
+				}
+				switch (current) {
 				case UP:
 				case DOWN:
 					oldlen = strlen(c->buffer);
-					if (!gethistory(current, c->buffer)) continue;
+					if (!gethistory(current == UP, c->buffer)) break;
 					newlen = strlen(c->buffer);
 					end = cursor = start + newlen;
 
@@ -142,14 +168,21 @@ int userinput(struct context *c) {
 					if (cursor < end) putchar(*cursor++);
 					break;
 				}
+			}
+			switch (current) {
+			case FORWARD:
+				while (cursor != end && *cursor != ' ') putchar(*cursor++);
+				while (cursor != end && *cursor == ' ') putchar(*cursor++);
 				break;
-			default:
-				ungetc(current, stdin);
+			case BACKWARD:
+				while (cursor != start && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
+				while (cursor != start && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
+				break;
 			}
 			break;
-		case BACKSPACE:
+
 		case DEL:
-			if (cursor == start) continue;
+			if (cursor == start) break;
 			memmove(cursor - 1, cursor, end - cursor);
 			--cursor;
 			*--end = '\0';
@@ -161,7 +194,7 @@ int userinput(struct context *c) {
 
 			break;
 		}
-		puts("\r");
+		putchar('\n');
 	}
 
 	while (*start == ' ') ++start;

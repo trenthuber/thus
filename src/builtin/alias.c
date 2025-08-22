@@ -52,7 +52,7 @@ BUILTIN(alias) {
 	switch (argc) {
 	case 1:
 		for (i = 0; i < aliases.size; ++i)
-			printf("%s = \"%s\"\r\n", aliases.entries[i].lhs, aliases.entries[i].rhs);
+			printf("%s = \"%s\"\n", aliases.entries[i].lhs, aliases.entries[i].rhs);
 		break;
 	case 3:
 		if (aliases.size == MAXALIAS) {
