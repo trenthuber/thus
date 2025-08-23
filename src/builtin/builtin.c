@@ -16,10 +16,14 @@ int isbuiltin(char **args) {
 			status = builtinp->func(n, args);
 			return 1;
 		}
+
 	return 0;
 }
 
 int usage(char *program, char *options) {
-	fprintf(stderr, "Usage: %s %s\n", program, options);
+	fprintf(stderr, "Usage: %s", program);
+	if (options) fprintf(stderr, " %s", options);
+	fputc('\n', stderr);
+
 	return EXIT_FAILURE;
 }

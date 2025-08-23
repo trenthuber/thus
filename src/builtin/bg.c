@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/errno.h>
+#include <sys/wait.h>
 #include <termios.h>
 
 #include "bg.h"

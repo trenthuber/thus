@@ -28,9 +28,7 @@ void note(char *fmt, ...) {
 void fatal(char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
-	(errno ? vwarn : vwarnx)(fmt, args);
-	va_end(args);
-	exit(EXIT_FAILURE);
+	(errno ? verr : verrx)(EXIT_FAILURE, fmt, args);
 }
 
 void init(void) {
@@ -65,10 +63,12 @@ void init(void) {
 }
 
 char *catpath(char *dir, char *filename, char *buffer) {
+	size_t l;
 	int slash;
 
-	slash = dir[strlen(dir) - 1] == '/';
-	if (strlen(dir) + slash + strlen(filename) + 1 > PATH_MAX) {
+	l = strlen(dir);
+	slash = dir[l - 1] == '/';
+	if (l + slash + strlen(filename) + 1 > PATH_MAX) {
 		note("Path name `%s%s%s' too long", dir, slash ? "/" : "", filename);
 		return NULL;
 	}

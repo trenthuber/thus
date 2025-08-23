@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +22,7 @@ static struct {
 void inithistory(void) {
 	FILE *file;
 
-	if (!catpath(home, ".ashhistory", history.path)) exit(EXIT_FAILURE);
+	if (!catpath(home, ".thushistory", history.path)) exit(EXIT_FAILURE);
 	if (!(file = fopen(history.path, "r"))) {
 		if (errno == ENOENT) return;
 		fatal("Unable to open history file for reading");
@@ -54,10 +55,15 @@ void sethistory(char *buffer) {
 }
 
 void deinithistory(void) {
+	int fd;
 	FILE *file;
 
-	if (!(file = fopen(history.path, "w"))) {
+	if ((fd = open(history.path, O_WRONLY | O_CREAT | O_TRUNC, 0600)) == -1) {
 		note("Unable to open history file for writing");
+		return;
+	}
+	if (!(file = fdopen(fd, "w"))) {
+		note("Unable to open history file descriptor as FILE pointer");
 		return;
 	}
 	for (history.c = history.b; history.c != history.t; INC(c)) {

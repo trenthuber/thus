@@ -1,6 +1,8 @@
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "builtin.h"
 #include "context.h"
@@ -35,6 +37,18 @@ BUILTIN(source) {
 
 void config(char *name) {
 	char path[PATH_MAX];
+	int fd;
 
-	source(2, (char *[]){"source", catpath(home, name, path), NULL});
+	if (!catpath(home, name, path)) return;
+
+	if ((fd = open(path, O_RDONLY | O_CREAT, 0644)) == -1) {
+		note("Unable to create `%s'", path);
+		return;
+	}
+	if (close(fd) == -1) {
+		note("Unable to close `%s'", path);
+		return;
+	}
+
+	source(2, (char *[]){"source", path, NULL});
 }

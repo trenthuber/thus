@@ -4,6 +4,7 @@ int main(void) {
 	build("./");
 
 	build("src/");
+	build("tools/");
 
 	return EXIT_SUCCESS;
 }
