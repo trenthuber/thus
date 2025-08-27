@@ -17,6 +17,6 @@ BUILTIN(foo) {
 
 The `BUILTIN()` macro is defined in [`builtin.h`](builtin.h#L1) and provides an interface similar to that of `main()`, passing the arguments from the user as an array of C strings (`argv`) along with a count (`argc`). This allows you to write code for built-ins exactly as you would write them in a regular C program.
 
-Errors should be reported to the user using the `note()` function defined in [`utils.c`](../utils.c#L20).
+Errors should be reported to the user using the `note()` function defined in [`utils.c`](../utils.c#L17).
 
 Once the source is done being written, simply rebuild the shell and it will automatically incorporate the new built-in.
