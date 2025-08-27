@@ -4,7 +4,6 @@
 
 #include "builtin.h"
 #include "context.h"
-#include "input.h"
 #include "parse.h"
 #include "utils.h"
 
@@ -17,7 +16,7 @@ static struct {
 	size_t size;
 } aliases;
 
-char *getaliasrhs(char *token) {
+char *getrawalias(char *token) {
 	size_t i;
 
 	for (i = 0; i < aliases.size; ++i)
@@ -31,8 +30,9 @@ char **getalias(char *token) {
 	size_t l;
 	static struct context context;
 
-	if (!(rhs = getaliasrhs(token))) return NULL;
+	if (!(rhs = getrawalias(token))) return NULL;
 
+	while (*rhs == ' ') ++rhs;
 	strcpy(context.buffer, rhs);
 	l = strlen(rhs);
 	context.buffer[l + 1] = '\0';
@@ -41,6 +41,7 @@ char **getalias(char *token) {
 	context.b = context.buffer;
 
 	if (!parse(&context)) return NULL;
+	if (!context.t) *context.tokens = NULL;
 
 	return context.tokens;
 }
@@ -57,10 +58,6 @@ BUILTIN(alias) {
 	case 3:
 		if (aliases.size == MAXALIAS) {
 			note("Unable to add alias `%s', maximum reached (%d)", argv[1], MAXALIAS);
-			return EXIT_FAILURE;
-		}
-		if (!*argv[2]) {
-			note("Cannot add empty alias");
 			return EXIT_FAILURE;
 		}
 		for (i = 0; i < aliases.size; ++i)

@@ -1,4 +1,3 @@
-#include <err.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -9,26 +8,43 @@
 #include <unistd.h>
 
 #include "bg.h"
-#include "context.h"
 #include "fg.h"
 #include "history.h"
-#include "options.h"
 
 int argcount, status;
 char **arglist, *home;
 
 void note(char *fmt, ...) {
 	va_list args;
+
+	fprintf(stderr, "%s: ", arglist[0]);
+
 	va_start(args, fmt);
-	(errno ? vwarn : vwarnx)(fmt, args);
+	vfprintf(stderr, fmt, args);
 	va_end(args);
-	errno = 0;
+
+	if (errno) {
+		fprintf(stderr, ": %s", strerror(errno));
+		errno = 0;
+	}
+
+	putchar('\n');
 }
 
 void fatal(char *fmt, ...) {
 	va_list args;
+
+	fprintf(stderr, "%s: ", arglist[0]);
+
 	va_start(args, fmt);
-	(errno ? verr : verrx)(EXIT_FAILURE, fmt, args);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+
+	if (errno) fprintf(stderr, ": %s", strerror(errno));
+
+	putchar('\n');
+
+	exit(EXIT_FAILURE);
 }
 
 void init(void) {
@@ -51,6 +67,10 @@ void init(void) {
 	if (setenv("PWD", buffer, 1) == -1)
 		fatal("Unable to append trailing slash to $PWD$");
 
+	if (setenv("PATH", "/usr/local/bin/:/usr/local/sbin/"
+	                   ":/usr/bin/:/usr/sbin/:/bin/:/sbin/", 1) == -1)
+		fatal("Unable to initialize $PATH$");
+
 	if (!(shlvlstr = getenv("SHLVL"))) shlvlstr = "0";
 	if ((shlvl = strtol(shlvlstr, NULL, 10)) < 0) shlvl = 0;
 	sprintf(buffer, "%ld", shlvl + 1);
@@ -59,7 +79,7 @@ void init(void) {
 
 	initfg();
 	initbg();
-	if (interactive) inithistory();
+	inithistory();
 }
 
 char *catpath(char *dir, char *filename, char *buffer) {
@@ -81,7 +101,7 @@ char *catpath(char *dir, char *filename, char *buffer) {
 }
 
 void deinit(void) {
-	if (interactive) deinithistory();
+	deinithistory();
 	deinitbg();
 	deinitfg();
 }

@@ -11,10 +11,12 @@
 #include "utils.h"
 
 enum {
+	ALIAS,
 	BUILTIN,
 	PATH,
-	ALIAS,
 };
+
+static int type;
 
 static int exists(char *path) {
 	struct stat pstat;
@@ -24,26 +26,27 @@ static int exists(char *path) {
 		mask = S_IFREG | S_IXUSR;
 		if ((pstat.st_mode & mask) == mask) return 1;
 	} else if (errno != ENOENT) note("Unable to check if `%s' exists", path);
+	else errno = 0;
 
 	return 0;
 }
 
-static char *getpathtype(char *file, int *type) {
+char *getpath(char *file) {
 	char *slash, *entry, *end, dir[PATH_MAX];
 	struct builtin *builtin;
 	size_t l;
 	static char path[PATH_MAX];
 
-	*type = PATH;
+	type = PATH;
 	if (!(slash = strchr(file, '/'))) {
-		if ((entry = getaliasrhs(file))) {
-			*type = ALIAS;
+		if ((entry = getrawalias(file))) {
+			type = ALIAS;
 			return entry;
 		}
 
 		for (builtin = builtins; builtin->func; ++builtin)
 			if (strcmp(file, builtin->name) == 0) {
-				*type = BUILTIN;
+				type = BUILTIN;
 				return file;
 			}
 
@@ -70,19 +73,12 @@ static char *getpathtype(char *file, int *type) {
 	return NULL;
 }
 
-char *getpath(char *file) {
-	int type;
-
-	return getpathtype(file, &type);
-}
-
 BUILTIN(which) {
-	int type;
 	char *result;
 
 	if (argc != 2) return usage(argv[0], "name");
 
-	if (!(result = getpathtype(argv[1], &type))) {
+	if (!(result = getpath(argv[1]))) {
 		printf("%s not found\n", argv[1]);
 		return EXIT_SUCCESS;
 	}

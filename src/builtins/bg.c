@@ -1,7 +1,6 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/errno.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -19,7 +18,7 @@ struct bglink {
 };
 
 static struct {
-	struct bglink entries[MAXBG + 1], *active, *free;
+	struct bglink entries[MAXBG], *active, *free;
 } bgjobs;
 
 void initbg(void) {
@@ -49,6 +48,7 @@ int pushbg(struct bgjob job) {
 
 int peekbg(struct bgjob *job) {
 	if (bgjobs.active && job) *job = bgjobs.active->job;
+
 	return bgjobs.active != NULL;
 }
 
@@ -88,12 +88,11 @@ void waitbg(int sig) {
 	e = errno;
 	p = bgjobs.active;
 	while (p) {
-		while ((id = waitpid(-p->job.id, &s, WNOHANG | WUNTRACED)) > 0) {
+		while ((id = waitpid(-p->job.id, &s, WNOHANG | WUNTRACED)) > 0)
 			if (WIFSTOPPED(s)) {
 				p->job.suspended = 1;
 				break;
 			}
-		}
 		if (id == -1) {
 			id = p->job.id;
 			p = p->next;

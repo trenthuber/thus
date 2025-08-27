@@ -1,17 +1,14 @@
 #include <fcntl.h>
-#include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/errno.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
-#include <stdio.h> // XXX
 
+#include "bg.h"
 #include "builtin.h"
 #include "context.h"
-#include "bg.h"
 #include "fg.h"
 #include "parse.h"
 #include "utils.h"
@@ -61,8 +58,6 @@ static void redirectfiles(struct redirect *r) {
 }
 
 static void exec(char *path, struct context *c) {
-	char cwd[PATH_MAX];
-
 	redirectfiles(c->redirects);
 
 	if (isbuiltin(c->tokens)) exit(status);
@@ -82,8 +77,7 @@ int run(struct context *c) {
 	islist = c->prev.term > BG || c->current.term > BG;
 	if (c->t) {
 		if (c->current.term == BG && fullbg()) {
-			note("Unable to place job in background, too many background jobs",
-			     c->current.name);
+			note("Unable to place job in background, too many background jobs");
 			return quit(c);
 		}
 		if (!(path = getpath(c->current.name))) {

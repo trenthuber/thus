@@ -9,8 +9,6 @@
 
 #include "bg.h"
 #include "builtin.h"
-#include "context.h"
-#include "input.h"
 #include "utils.h"
 
 static struct {

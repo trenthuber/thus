@@ -1,27 +1,20 @@
 #include "../external/cbs/cbs.c"
-#include "../external/cbsext.c"
 
-#define BUILTINS LIST("-Ibuiltin/")
+#define SRC1 "context", "history", "input"
+#define SRC2 "main", "options", "parse", "run", "utils"
 
 int main(void) {
+	char **src;
+
 	build("./");
 
-	build("builtin/");
+	build("builtins/");
 
-	buildfiles((struct cbsfile []){{"../bin/thus", NONE, 'x'},
+	for (src = LIST(SRC1); *src; ++src) compile(*src);
+	cflags = LIST("-Ibuiltins/");
+	for (src = LIST(SRC2); *src; ++src) compile(*src);
 
-	                               {"context", NONE},
-	                               {"history", NONE},
-	                               {"input", NONE},
-	                               {"main", BUILTINS},
-	                               {"options", BUILTINS},
-	                               {"parse", BUILTINS},
-	                               {"run", BUILTINS},
-	                               {"utils", BUILTINS},
-
-	                               {"builtin.a"},
-
-	                               {NULL}});
+	load('x', "../bin/thus", LIST(SRC1, SRC2, "builtins.a"));
 
 	return EXIT_SUCCESS;
 }

@@ -7,7 +7,6 @@
 
 #include "alias.h"
 #include "context.h"
-#include "options.h"
 #include "utils.h"
 
 int parse(struct context *c) {

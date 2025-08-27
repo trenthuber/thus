@@ -1,13 +1,11 @@
 #include <fcntl.h>
 #include <limits.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include "builtin.h"
 #include "context.h"
 #include "input.h"
-#include "parse.h"
 #include "run.h"
 #include "utils.h"
 

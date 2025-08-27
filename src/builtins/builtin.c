@@ -7,13 +7,13 @@
 #include "utils.h"
 
 int isbuiltin(char **args) {
-	struct builtin *builtinp;
+	struct builtin *builtin;
 	size_t n;
 
-	for (builtinp = builtins; builtinp->func; ++builtinp)
-		if (strcmp(args[0], builtinp->name) == 0) {
+	for (builtin = builtins; builtin->func; ++builtin)
+		if (strcmp(args[0], builtin->name) == 0) {
 			for (n = 1; args[n]; ++n);
-			status = builtinp->func(n, args);
+			status = builtin->func(n, args);
 			return 1;
 		}
 
@@ -21,7 +21,7 @@ int isbuiltin(char **args) {
 }
 
 int usage(char *program, char *options) {
-	fprintf(stderr, "Usage: %s", program);
+	fprintf(stderr, "usage: %s", program);
 	if (options) fprintf(stderr, " %s", options);
 	fputc('\n', stderr);
 

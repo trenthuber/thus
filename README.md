@@ -1,38 +1,64 @@
 # thus
 
-While Unix shells are a solved problem in computer science, recent iterations have admittedly been more and more complicated by feature sets that attempt to cater to all users. Ash seeks to be a completely stripped down, simplified approach to shells, only including the essential parts, i.e., just the things *I personally use*. In fact, the main goals for this project in order or priority have been:
+thus is a custom UNIX shell built entirely from scratch for POSIX platforms.
 
-1. To learn more about the interaction between shells, terminals, and the operating system.
-2. To create a utility I would personally want to use.
-3. To create a utility other people would want to use.
+## Features
 
-## Feature Set
-
-- Foreground and background process groups (`fg`, `bg`, `&`)
-- Unix pipes
+- Job control (`fg`, `bg`, `&`, `^Z`)
+- Pipelines
 - Conditional execution (`&&`, `||`)
-- Shell history (cached in `~/.thushistory`)
-- File redirection
-- Environment variables
-- File globbing
+- File redirection (`<file`, `2>&1`, etc.)
+- Globbing (`*`, `?`, `[...]`)
+- Quoting with escape sequences (`"\r...\n"`)
+- Environment variables (`set`, `unset`, `$VAR$`, etc.)
+- Aliasing (`alias`, `unalias`)
+- Configuration files (`~.thuslogin`, `~.thusrc`)
+- Cached history (`~.thushistory`)
+- [Automated integration of built-in commands](src/builtins/README.md)
 
 ## Building
 
-Similar to my other projects, thus uses [cbs](https://github.com/trenthuber/cbs) as its build system, included as a git submodule, so make sure to clone recursively.
+thus uses [cbs](https://github.com/trenthuber/cbs/) as its build system.
 
 ```console
-$ git clone --recursive https://github.com/trenthuber/thus
-$ cd thus
-$ cc -o build build.c
-$ ./build
-$ ./bin/thus
+> git clone --recursive https://github.com/trenthuber/thus/
+> cd thus/
+> cc -o build build.c
+> build
 ```
 
-Note, you only need to run the `cc` command the first time you build the project, as the `./build` executable will recompile itself everytime it is run.
+After building, you can use `install` to add the shell to your path. The default installation prefix is `/usr/local/`, but a custom one can be passed as an argument to the utility.
+
+```console
+> sudo ./install
+```
+
+After installing, you can use `uninstall` to remove the shell from the install location.
+
+```console
+> sudo ./uninstall
+```
+
+## Quirks
+
+While thus operates for the most part like Bourne shell, there are a few places where it takes a subtly different approach.
+
+### Quotes
+
+Quoting is done with double quotes (`"..."`) and undergoes no shell substitution, similar to single quotes in Bourne shell. In place of substitution, quotes can be concatenated with surrounding tokens not separated by whitespace.
+
+### Environment variables and aliases
+
+Environment variables are referred to by tokens that begin and end with a `$`. For example, evaluating the path would look like `$PATH$`. Setting environment variables is done with the `set` built-in command, not with the `name=value` syntax. This syntax is similarly avoided when declaring aliases with the `alias` built-in command.
+
+### Leading and trailing slashes
+
+Prepending `./` to executables located in the current directory is not mandatory unless there already exists an executable in `$PATH$` with the same name that you would like to override.
+
+The `$HOME$`, `$PWD$`, and `$PATH$` environment variables are always initialized with trailing slashes. Therefore, whenever one of these variables or `~` is substituted in the shell, it will retain the trailing slash.
 
 ## Resources
 
-These websites have been invaluable in the making of thus.
-
 - [TTY Demystified](http://www.linusakesson.net/programming/tty/)
 - [Process Groups and Terminal Signaling](https://cs162.org/static/readings/ic221_s16_lec17.html)
+- [Terminal Input Sequences](https://en.wikipedia.org/wiki/ANSI_escape_code#Terminal_input_sequences)

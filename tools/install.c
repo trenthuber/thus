@@ -8,7 +8,7 @@ int main(int argc, char **argv) {
 	int slash;
 	pid_t cpid;
 
-	if (argc > 2) errx(EXIT_FAILURE, "%s [prefix]", argv[0]);
+	if (argc > 2) errx(EXIT_FAILURE, "usage: %s [prefix]", argv[0]);
 
 	path = stpcpy(define, "-DPATH=\"");
 	if (argc == 2) {

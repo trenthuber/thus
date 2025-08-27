@@ -1,5 +1,4 @@
 #include <fcntl.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,7 +8,6 @@
 
 #include "context.h"
 #include "history.h"
-#include "input.h"
 #include "utils.h"
 
 enum {
@@ -130,8 +128,7 @@ int userinput(struct context *c) {
 			/* This is a very minimal way to handle arrow keys. All modifiers except for
 			 * the ALT key are processed but ignored.
 			 *
-			 * Reference:
-			 * https://en.wikipedia.org/wiki/ANSI_escape_code#Terminal_input_sequences */
+			 * See "Terminal Input Sequences" reference in `README.md'. */
 		case ESCAPE:
 			if ((current = getchar()) == '[') {
 				while ((current = getchar()) >= '0' && current <= '9');

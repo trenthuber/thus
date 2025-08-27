@@ -6,13 +6,13 @@
 #include <sys/errno.h>
 
 #include "context.h"
-#include "input.h"
+#include "options.h"
 #include "utils.h"
 
 #define MAXHIST 100
 
-#define INC(v) (history.v = (history.v + 1) % (MAXHIST + 1))
-#define DEC(v) (history.v = (history.v + MAXHIST) % (MAXHIST + 1))
+#define INC(x) (history.x = (history.x + 1) % (MAXHIST + 1))
+#define DEC(x) (history.x = (history.x + MAXHIST) % (MAXHIST + 1))
 
 static struct {
 	char path[PATH_MAX], entries[MAXHIST + 1][MAXCHARS + 1];
@@ -21,6 +21,8 @@ static struct {
 
 void inithistory(void) {
 	FILE *file;
+
+	if (!interactive) return;
 
 	if (!catpath(home, ".thushistory", history.path)) exit(EXIT_FAILURE);
 	if (!(file = fopen(history.path, "r"))) {
@@ -57,6 +59,8 @@ void sethistory(char *buffer) {
 void deinithistory(void) {
 	int fd;
 	FILE *file;
+
+	if (!interactive) return;
 
 	if ((fd = open(history.path, O_WRONLY | O_CREAT | O_TRUNC, 0600)) == -1) {
 		note("Unable to open history file for writing");

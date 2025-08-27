@@ -1,5 +1,5 @@
-#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "builtin.h"
@@ -10,19 +10,23 @@
 int login, interactive;
 
 void options(struct context *context) {
-	int opt, l;
-	char *message = "[file | -c string] [arg ...] [-hl]\n"
-	                "    <file> [arg ...]      Run script with args\n"
-	                "    -c <string> [arg ...] Run string with args\n"
-	                "    -h                    Show this help message\n"
-	                "    -l                    Run as a login shell\n";
+	int opt;
+	char *p, *message = "[file | -c string] [arg ...] [-hl]\n"
+	                    "    <file> [arg ...]      Run script\n"
+	                    "    -c <string> [arg ...] Run string\n"
+	                    "    -h                    Show this help message\n"
+	                    "    -l                    Run as a login shell";
 
-
-	login = **arglist == '-';
+	opt = 0;
+	if (*arglist[0] == '-') {
+		++arglist[0];
+		login = 1;
+	}
+	if ((p = strrchr(arglist[0], '/'))) arglist[0] = p + 1;
 	interactive = 1;
 	context->input = userinput;
 
-	while ((opt = getopt(argcount, arglist, ":c:hl")) != -1) {
+	while (opt != 'c' && (opt = getopt(argcount, arglist, ":c:hl")) != -1)
 		switch (opt) {
 		case 'c':
 			interactive = 0;
@@ -44,8 +48,6 @@ void options(struct context *context) {
 			note("Unknown command line option `-%c'\n", optopt);
 			exit(usage(arglist[0], message));
 		}
-		if (opt == 'c') break;
-	}
 	if (!context->string && arglist[optind]) {
 		interactive = 0;
 		context->script = arglist[optind];
