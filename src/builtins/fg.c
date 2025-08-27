@@ -46,14 +46,8 @@ static void waitall(int sig) {
 	errno = e;
 }
 
-void setsigchld(struct sigaction *act) {
-	if (sigaction(SIGCHLD, act, NULL) == -1)
-		fatal("Unable to install SIGCHLD handler");
-}
-
 void initfg(void) {
-	if (tcgetattr(STDIN_FILENO, &canonical) == -1)
-		fatal("Unable to get default termios config");
+	if (tcgetattr(STDIN_FILENO, &canonical) == -1) exit(errno);
 	raw = canonical;
 	raw.c_lflag &= ~(ICANON | ECHO | ISIG);
 	if (!setconfig(&raw)) exit(EXIT_FAILURE);
@@ -62,6 +56,11 @@ void initfg(void) {
 	actall.sa_handler = waitall;
 	actdefault.sa_handler = SIG_DFL;
 	actignore.sa_handler = SIG_IGN;
+}
+
+void setsigchld(struct sigaction *act) {
+	if (sigaction(SIGCHLD, act, NULL) == -1)
+		fatal("Unable to install SIGCHLD handler");
 }
 
 int runfg(pid_t id) {
@@ -92,9 +91,8 @@ int runfg(pid_t id) {
 	if (sigaction(SIGTTOU, &actignore, NULL) == -1
 	    || tcsetpgrp(STDIN_FILENO, getpgrp()) == -1
 	    || sigaction(SIGTTOU, &actdefault, NULL) == -1) {
-		note("Unable to reclaim foreground; terminating");
 		deinit();
-		exit(EXIT_FAILURE);
+		exit(errno);
 	}
 	if (tcgetattr(STDIN_FILENO, &job.config) == -1)
 		note("Unable to save termios config of job %d", id);

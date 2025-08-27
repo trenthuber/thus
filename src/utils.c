@@ -44,7 +44,7 @@ void fatal(char *fmt, ...) {
 
 	putchar('\n');
 
-	exit(EXIT_FAILURE);
+	exit(errno);
 }
 
 void init(void) {
