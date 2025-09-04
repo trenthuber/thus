@@ -113,7 +113,11 @@ int run(struct context *c) {
 				}
 				exec(path, c);
 			}
-			if (ispipestart) pipeid = cpid; else closepipe(c->prev);
+			if (ispipestart) pipeid = cpid;
+			else if (!closepipe(c->prev)) {
+				killpg(pipeid, SIGKILL);
+				return quit(c);
+			}
 			jobid = pipeid;
 		} else if (!c->r && isbuiltin(c->tokens)) cpid = 0;
 		else if ((jobid = cpid = fork()) == -1) {
