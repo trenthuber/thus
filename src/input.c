@@ -117,6 +117,7 @@ int userinput(struct context *c) {
 			putchar('\n');
 			return quit(c);
 		case CTRLD:
+			putchar('\n');
 			return 0;
 		case CLEAR:
 			fputs("\033[H\033[J", stdout);
