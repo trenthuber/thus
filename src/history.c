@@ -16,8 +16,17 @@
 
 static struct {
 	char path[PATH_MAX], entries[MAXHIST + 1][MAXCHARS + 1];
-	size_t b, c, t;
+	size_t b, s, c, t;
 } history;
+
+static void readhistory(FILE *file) {
+	history.b = history.t = 0;
+	while (fgets(history.entries[history.t], sizeof*history.entries, file)) {
+		history.entries[history.t][strlen(history.entries[history.t]) - 1] = '\0';
+		if (INC(t) == history.b) INC(b);
+	}
+	history.s = history.c = history.t;
+}
 
 void inithistory(void) {
 	FILE *file;
@@ -29,12 +38,8 @@ void inithistory(void) {
 		if (errno == ENOENT) return;
 		fatal("Unable to open history file for reading");
 	}
-	while (fgets(history.entries[history.t], sizeof*history.entries, file)) {
-		history.entries[history.t][strlen(history.entries[history.t]) - 1] = '\0';
-		if ((history.c = INC(t)) == history.b) INC(b);
-	}
-	if (ferror(file) || !feof(file))
-		fatal("Unable to read from history file");
+	readhistory(file);
+	if (ferror(file) || !feof(file)) fatal("Unable to read from history file");
 	if (fclose(file) == EOF) fatal("Unable to close history file");
 }
 
@@ -52,24 +57,13 @@ int gethistory(int back, char *buffer) {
 
 void sethistory(char *buffer) {
 	strcpy(history.entries[history.t], buffer);
-	if ((history.c = INC(t)) == history.b) INC(b);
+	history.c = INC(t);
+	if (history.t == history.b) INC(b);
+	if (history.t == history.s) INC(s);
 	*history.entries[history.t] = '\0';
 }
 
-void deinithistory(void) {
-	int fd;
-	FILE *file;
-
-	if (!interactive) return;
-
-	if ((fd = open(history.path, O_WRONLY | O_CREAT | O_TRUNC, 0600)) == -1) {
-		note("Unable to open history file for writing");
-		return;
-	}
-	if (!(file = fdopen(fd, "w"))) {
-		note("Unable to open history file descriptor as FILE pointer");
-		return;
-	}
+static void writehistory(FILE *file) {
 	for (history.c = history.b; history.c != history.t; INC(c)) {
 		if (fputs(history.entries[history.c], file) == EOF) {
 			note("Unable to write to history file");
@@ -80,5 +74,33 @@ void deinithistory(void) {
 			break;
 		}
 	}
+}
+
+void deinithistory(void) {
+	int fd;
+	FILE *file;
+
+	if (!interactive) return;
+
+	if ((fd = open(history.path, O_WRONLY | O_CREAT | O_APPEND, 0600)) == -1) {
+		note("Unable to open history file for writing");
+		return;
+	}
+	if (!(file = fdopen(fd, "a"))) {
+		note("Unable to open history file descriptor as FILE pointer");
+		return;
+	}
+	history.b = history.s;
+	writehistory(file);
+	if (!freopen(history.path, "r", file)) {
+		note("Unable to reopen history file for reading");
+		return;
+	}
+	readhistory(file);
+	if (!freopen(history.path, "w", file)) {
+		note("Unable to reopen history file for writing");
+		return;
+	}
+	writehistory(file);
 	if (fclose(file) == EOF) note("Unable to close history stream");
 }
