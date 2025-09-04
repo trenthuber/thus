@@ -74,6 +74,7 @@ int run(struct context *c) {
 	setsigchld(&actbg);
 	if (!parse(c)) return 0;
 	setsigchld(&actdefault);
+
 	islist = c->prev.term > BG || c->current.term > BG;
 	if (c->t) {
 		if (c->current.term == BG && fullbg()) {
@@ -82,9 +83,7 @@ int run(struct context *c) {
 		}
 		if (!(path = getpath(c->current.name))) {
 			note("Couldn't find `%s' command", c->current.name);
-			if (c->prev.term == PIPE) {
-				killpg(pipeid, SIGKILL);
-			}
+			if (c->prev.term == PIPE) killpg(pipeid, SIGKILL);
 			return quit(c);
 		}
 
@@ -114,7 +113,7 @@ int run(struct context *c) {
 				}
 				exec(path, c);
 			}
-			if (ispipestart) pipeid = cpid;
+			if (ispipestart) pipeid = cpid; else closepipe(c->prev);
 			jobid = pipeid;
 		} else if (!c->r && isbuiltin(c->tokens)) cpid = 0;
 		else if ((jobid = cpid = fork()) == -1) {

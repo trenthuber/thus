@@ -20,14 +20,15 @@ int parse(struct context *c) {
 		if (!c->input(c)) return 0;
 		c->b = c->buffer;
 	}
-	if (globs.gl_pathc) {
-		globfree(&globs);
-		globs.gl_pathc = 0;
-	}
 	c->t = c->tokens;
 	c->r = c->redirects;
 	c->r->mode = NONE;
 	c->prev = c->current;
+
+	if (globs.gl_pathc) {
+		globfree(&globs);
+		globs.gl_pathc = 0;
+	}
 	prevsublen = globbing = 0;
 
 	for (*c->t = c->b; *c->b; ++c->b) switch (*c->b) {
