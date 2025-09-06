@@ -29,14 +29,14 @@ void initbg(void) {
 	bgjobs.free = bgjobs.entries;
 }
 
-int fullbg(void) {
+int bgfull(void) {
 	return !bgjobs.free;
 }
 
 int pushbg(struct bgjob job) {
 	struct bglink *p;
 
-	if (fullbg()) return 0;
+	if (bgfull()) return 0;
 
 	(p = bgjobs.free)->job = job;
 	bgjobs.free = p->next;
@@ -44,6 +44,10 @@ int pushbg(struct bgjob job) {
 	bgjobs.active = p;
 
 	return 1;
+}
+
+int pushbgid(pid_t id) {
+	return pushbg((struct bgjob){.id = id, .config = canonical});
 }
 
 int peekbg(struct bgjob *job) {
@@ -63,11 +67,7 @@ int searchbg(pid_t id, struct bgjob *job) {
 	return 0;
 }
 
-int pushid(pid_t id) {
-	return pushbg((struct bgjob){.id = id, .config = canonical});
-}
-
-void removeid(pid_t id) {
+void removebg(pid_t id) {
 	struct bglink *p, *prev;
 	
 	for (prev = NULL, p = bgjobs.active; p; prev = p, p = p->next)
@@ -96,7 +96,7 @@ void waitbg(int sig) {
 		if (id == -1) {
 			id = p->job.id;
 			p = p->next;
-			removeid(id);
+			removebg(id);
 		} else p = p->next;
 	}
 	errno = e;
@@ -147,7 +147,7 @@ BUILTIN(bg) {
 		note("Unable to wake up suspended job %d", job.id);
 		return EXIT_FAILURE;
 	}
-	removeid(job.id);
+	removebg(job.id);
 	job.suspended = 0;
 	pushbg(job);
 

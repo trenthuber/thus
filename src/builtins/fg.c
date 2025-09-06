@@ -77,7 +77,7 @@ int runfg(pid_t id) {
 		note("Unable to wake up job %d", id);
 		return 0;
 	}
-	removeid(id);
+	removebg(id);
 
 	/* SIGCHLD handler is really the function that reaps the foreground process,
 	 * the waitpid() below is just to block the current thread of execution until

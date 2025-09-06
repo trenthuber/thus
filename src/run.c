@@ -77,7 +77,7 @@ int run(struct context *c) {
 
 	islist = c->prev.term > BG || c->current.term > BG;
 	if (c->t) {
-		if (c->current.term == BG && fullbg()) {
+		if (c->current.term == BG && bgfull()) {
 			note("Unable to place job in background, too many background jobs");
 			return quit(c);
 		}
@@ -135,7 +135,7 @@ int run(struct context *c) {
 				return quit(c);
 			}
 			if (ispipestart || c->current.term == BG) {
-				pushid(jobid);
+				pushbgid(jobid);
 				return 1;
 			}
 			if (c->current.term != PIPE && !runfg(jobid)) return quit(c);
