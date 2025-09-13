@@ -52,30 +52,34 @@ void init(void) {
 	size_t l;
 	long shlvl;
 
-	if (!(home = getenv("HOME"))) fatal("Unable to find home directory");
-	strcpy(buffer, home);
-	l = strlen(buffer);
-	buffer[l + 1] = '\0';
-	buffer[l] = '/';
-	if (setenv("HOME", buffer, 1) == -1 || !(home = getenv("HOME")))
-		fatal("Unable to append trailing slash to $HOME$");
-
-	if (!getcwd(buffer, PATH_MAX)) fatal("Unable to find current directory");
-	l = strlen(buffer);
-	buffer[l + 1] = '\0';
-	buffer[l] = '/';
-	if (setenv("PWD", buffer, 1) == -1)
-		fatal("Unable to append trailing slash to $PWD$");
-
-	if (setenv("PATH", "/usr/local/bin/:/usr/local/sbin/"
-	                   ":/usr/bin/:/usr/sbin/:/bin/:/sbin/", 1) == -1)
-		fatal("Unable to initialize $PATH$");
-
 	if (!(shlvlstr = getenv("SHLVL"))) shlvlstr = "0";
 	if ((shlvl = strtol(shlvlstr, NULL, 10)) < 0) shlvl = 0;
-	sprintf(buffer, "%ld", shlvl + 1);
+	sprintf(buffer, "%ld", ++shlvl);
 	if (setenv("SHLVL", buffer, 1) == -1)
 		note("Unable to update $SHLVL$ environment variable");
+
+	if (!(home = getenv("HOME"))) fatal("Unable to find home directory");
+	if (shlvl == 1) {
+		l = strlen(home);
+		if (home[l - 1] != '/') {
+			strcpy(buffer, home);
+			buffer[l] = '/';
+			buffer[l + 1] = '\0';
+			if (setenv("HOME", buffer, 1) == -1 || !(home = getenv("HOME")))
+				fatal("Unable to append trailing slash to $HOME$");
+		}
+
+		if (!getcwd(buffer, PATH_MAX)) fatal("Unable to find current directory");
+		l = strlen(buffer);
+		buffer[l] = '/';
+		buffer[l + 1] = '\0';
+		if (setenv("PWD", buffer, 1) == -1)
+			fatal("Unable to append trailing slash to $PWD$");
+
+		if (setenv("PATH", "/usr/local/bin/:/usr/local/sbin/"
+		                   ":/usr/bin/:/usr/sbin/:/bin/:/sbin/", 1) == -1)
+			fatal("Unable to initialize $PATH$");
+	}
 
 	initfg();
 	initbg();
