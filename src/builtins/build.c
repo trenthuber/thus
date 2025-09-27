@@ -9,9 +9,9 @@
 #define MAXBUILTINS 50
 
 int main(void) {
-	int listfd, l;
+	int listfd, d;
 	DIR *dir;
-	char *src[MAXBUILTINS + 2 + 1], **p;
+	char *srcs[MAXBUILTINS + 2 + 1], **src, *decl;
 	struct dirent *entry;
 
 	build("./");
@@ -24,31 +24,31 @@ int main(void) {
 	dprintf(listfd, "#include <stddef.h>\n\n#include \"builtin.h\"\n"
 	        "#include \"list.h\"\n\n");
 
-	p = src;
+	src = srcs;
 	errno = 0;
 	while ((entry = readdir(dir))) {
 		if (strcmp(entry->d_name, "build.c") == 0
-		    || !(*p = strrchr(entry->d_name, '.')) || strcmp(*p, ".c") != 0)
+		    || !(*src = strrchr(entry->d_name, '.')) || strcmp(*src, ".c") != 0)
 			continue;
-		if (!(*p = strdup(entry->d_name)))
+		if (!(*src = strdup(entry->d_name)))
 			err(EXIT_FAILURE, "Unable to duplicate directory entry");
-		(*p)[strlen(*p) - 2] = '\0';
-		if (p - src == 2 + MAXBUILTINS + 1)
+		(*src)[strlen(*src) - 2] = '\0';
+		if (src - srcs == 2 + MAXBUILTINS + 1)
 			errx(EXIT_FAILURE, "Unable to add %s built-in, maximum reached (%d)",
-			     *p, MAXBUILTINS);
-		if (strcmp(*p, "builtin") != 0 && strcmp(*p, "list") != 0)
-			dprintf(listfd, "extern BUILTIN(%s);\n", *p);
-		++p;
+			     *src, MAXBUILTINS);
+		if (strcmp(*src, "builtin") != 0 && strcmp(*src, "list") != 0)
+			dprintf(listfd, "BUILTIN(%s);\n", *src);
+		++src;
 	}
 	if (errno) err(EXIT_FAILURE, "Unable to read from current directory");
+	*src = NULL;
 
-	*p = "struct builtin builtins[] = {";
-	l = (int)strlen(*p);
-	dprintf(listfd, "\n%s", *p);
-	*p = NULL;
-	for (p = src; *p; ++p)
-		if (strcmp(*p, "builtin") != 0 && strcmp(*p, "list") != 0)
-			dprintf(listfd, "{\"%s\", %s},\n%*s", *p, *p, l, "");
+	decl = "struct builtin builtins[] = {";
+	d = (int)strlen(decl);
+	dprintf(listfd, "\n%s", decl);
+	for (src = srcs; *src; ++src)
+		if (strcmp(*src, "builtin") != 0 && strcmp(*src, "list") != 0)
+			dprintf(listfd, "{\"%s\", %s},\n%*s", *src, *src, d, "");
 	dprintf(listfd, "{NULL}};\n");
 
 	if (closedir(dir) == -1)
@@ -56,10 +56,10 @@ int main(void) {
 	if (close(listfd) == -1) err(EXIT_FAILURE, "Unable to close `list.c'");
 
 	cflags = LIST("-I../");
-	for (p = src; *p; ++p) compile(*p);
-	load('s', "../builtins", src);
+	for (src = srcs; *src; ++src) compile(*src);
+	load('s', "../builtins", srcs);
 
-	for (p = src; *p; ++p) free(*p);
+	for (src = srcs; *src; ++src) free(*src);
 
 	return EXIT_SUCCESS;
 }

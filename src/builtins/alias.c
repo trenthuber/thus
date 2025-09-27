@@ -41,7 +41,7 @@ char **getalias(char *token) {
 	context.b = context.buffer;
 
 	if (!parse(&context)) return NULL;
-	if (!context.t) *context.tokens = NULL;
+	if (!context.t) context.tokens[0] = NULL;
 
 	return context.tokens;
 }

@@ -150,7 +150,8 @@ int parse(struct context *c) {
 		if (c->r->mode) {
 			switch (*c->r->oldname) {
 			case '&':
-				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0 || l > INT_MAX || *stlend) {
+				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0 || l > INT_MAX
+				    || *stlend) {
 				case '\0':
 					note("Invalid syntax for file redirection");
 					return quit(c);
@@ -162,7 +163,8 @@ int parse(struct context *c) {
 			globbing = 0;
 
 			*c->t = c->b;
-		} else if (!c->alias && c->t == c->tokens && (sub = getalias(*c->tokens)) || globbing) {
+		} else if (!c->alias && c->t == c->tokens && (sub = getalias(c->tokens[0]))
+		           || globbing) {
 			if (globbing) {
 				globflags = GLOB_MARK;
 				if (prevsublen) globflags |= GLOB_APPEND;
@@ -187,7 +189,7 @@ int parse(struct context *c) {
 		if (term != ' ') {
 			if (c->t != c->tokens) {
 				*c->t = NULL;
-				strcpy(c->current.name, *c->tokens);
+				strcpy(c->current.name, c->tokens[0]);
 			} else c->t = NULL;
 			if (c->r == c->redirects) c->r = NULL;
 			switch (term) {

@@ -13,7 +13,6 @@ int main(void) {
 	for (src = LIST(SRC1); *src; ++src) compile(*src);
 	cflags = LIST("-Ibuiltins/");
 	for (src = LIST(SRC2); *src; ++src) compile(*src);
-
 	load('x', "../bin/thus", LIST(SRC1, SRC2, "builtins.a"));
 
 	return EXIT_SUCCESS;

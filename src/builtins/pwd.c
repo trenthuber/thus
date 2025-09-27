@@ -18,12 +18,12 @@ BUILTIN(pwd) {
 			note("Unable to get current working directory");
 			return EXIT_FAILURE;
 		}
-		l = strlen(cwd);
-		if (cwd[l - 1] != '/') {
-			cwd[l] = '/';
-			cwd[l + 1] = '\0';
+		l = strlen(buffer);
+		if (buffer[l - 1] != '/') {
+			buffer[l] = '/';
+			buffer[l + 1] = '\0';
 		}
-		if (setenv("PWD", cwd, 1) == -1) {
+		if (setenv("PWD", buffer, 1) == -1) {
 			note("Unable to set $PWD$");
 			return EXIT_FAILURE;
 		}

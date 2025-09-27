@@ -18,7 +18,7 @@ void options(struct context *context) {
 	                    "    -l                    Run as a login shell";
 
 	opt = 0;
-	if (*arglist[0] == '-') {
+	if (arglist[0][0] == '-') {
 		++arglist[0];
 		login = 1;
 	}
@@ -32,7 +32,7 @@ void options(struct context *context) {
 			interactive = 0;
 			context->string = optarg;
 			context->input = stringinput;
-			arglist[--optind] = ""; // Empty program name when running a string
+			arglist[--optind] = arglist[0];
 			break;
 		case 'h':
 			usage(arglist[0], message);

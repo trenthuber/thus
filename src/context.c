@@ -7,7 +7,7 @@ int clear(struct context *c) {
 	c->b = NULL;
 	c->t = NULL;
 	c->r = NULL;
-	*c->current.name = *c->buffer = '\0';
+	c->current.name[0] = c->buffer[0] = '\0';
 	c->current.term = SEMI;
 
 	return 1;

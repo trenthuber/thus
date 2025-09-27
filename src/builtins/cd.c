@@ -15,13 +15,13 @@ BUILTIN(cd) {
 		path = home;
 		break;
 	case 2:
-		if (!realpath(argv[1], path = buffer)) {
+		if (!(path = realpath(argv[1], buffer))) {
 			note(argv[1]);
 			return EXIT_FAILURE;
 		}
-		l = strlen(path);
-		path[l + 1] = '\0';
-		path[l] = '/';
+		l = strlen(buffer);
+		buffer[l + 1] = '\0';
+		buffer[l] = '/';
 		break;
 	default:
 		return usage(argv[0], "[directory]");

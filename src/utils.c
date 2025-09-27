@@ -96,7 +96,7 @@ char *catpath(char *dir, char *filename, char *buffer) {
 		note("Path name `%s%s%s' too long", dir, slash ? "/" : "", filename);
 		return NULL;
 	}
-	
+
 	strcpy(buffer, dir);
 	if (!slash) strcat(buffer, "/");
 	strcat(buffer, filename);

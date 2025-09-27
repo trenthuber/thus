@@ -29,27 +29,28 @@ enum {
 };
 
 int stringinput(struct context *c) {
-	char *start;
+	char *end;
 	size_t l;
 
-	if (!*c->string) {
+	if (!c->string[0]) {
 		if (c->script && munmap(c->map, c->maplen) == -1)
 			note("Unable to unmap memory associated with `%s'", c->script);
 		return 0;
 	}
 
-	start = c->string;
-	while (*c->string && *c->string != '\n') ++c->string;
-	l = c->string - start;
-	if (*c->string == '\n') ++c->string;
+	end = c->string;
+	while (*end && *end != '\n') ++end;
+	l = end - c->string;
+	while (*end == '\n') ++end; // scriptinput() repeatedly uses stringinput()
 	if (l > MAXCHARS) {
 		note("Line too long, exceeds %d character limit", MAXCHARS);
 		return 0;
 	}
 
-	strncpy(c->buffer, start, l);
+	strncpy(c->buffer, c->string, l);
 	c->buffer[l] = ';';
 	c->buffer[l + 1] = '\0';
+	c->string = end;
 
 	return 1;
 }
