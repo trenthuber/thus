@@ -16,7 +16,7 @@ enum {
 	CLEAR = '\014',
 	ESCAPE = '\033',
 
-	// See ESCAPE case in userinput()
+	/* See ESCAPE case in userinput() */
 	ALT = '2' + 1,
 
 	UP = 'A',
@@ -41,7 +41,7 @@ int stringinput(struct context *c) {
 	end = c->string;
 	while (*end && *end != '\n') ++end;
 	l = end - c->string;
-	while (*end == '\n') ++end; // scriptinput() repeatedly uses stringinput()
+	while (*end == '\n') ++end; /* scriptinput() repeatedly uses stringinput() */
 	if (l > MAXCHARS) {
 		note("Line too long, exceeds %d character limit", MAXCHARS);
 		return 0;

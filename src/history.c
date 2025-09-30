@@ -46,7 +46,7 @@ void inithistory(void) {
 int gethistory(int back, char *buffer) {
 	if (history.c == (back ? history.b : history.t)) return 0;
 
-	// Save the most recently modified history entry at the top of the list
+	/* Save the most recently modified history entry at the top of the list */
 	if (strcmp(history.entries[history.c], buffer) != 0)
 		strcpy(history.entries[history.t], buffer);
 

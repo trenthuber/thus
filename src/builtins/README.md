@@ -3,7 +3,7 @@
 To add a built-in command to the shell, first make a source file in the `src/builtins/` directory with the same name as the built-in. The source file should contain at least the following code (where "foo" is the name of the built-in).
 
 ```c
-// foo.c
+/* foo.c */
 
 #include <stdlib.h>
 
