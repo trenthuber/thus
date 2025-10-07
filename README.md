@@ -1,6 +1,6 @@
 # thus
 
-thus is a custom UNIX shell built entirely from scratch for POSIX platforms.
+thus is a custom Unix shell for POSIX platforms.
 
 ## Features
 
