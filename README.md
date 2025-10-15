@@ -72,6 +72,11 @@ The `$HOME$`, `$PWD$`, and `$PATH$` environment variables are always initialized
 with trailing slashes. Therefore, whenever one of these variables or `~` is
 substituted in the shell, it will retain the trailing slash.
 
+### File redirection
+
+For the sake of syntactic consistency, there is no whitespace between a file
+redirection operator and the filename that comes after it.
+
 ## Resources
 
 - [TTY Demystified](http://www.linusakesson.net/programming/tty/)
