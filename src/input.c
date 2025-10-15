@@ -7,16 +7,16 @@
 #include <unistd.h>
 
 #include "context.h"
+#include "fg.h"
 #include "history.h"
 #include "utils.h"
 
 enum {
-	CTRLC = '\003',
-	CTRLD,
+	CTRLD = '\004',
 	CLEAR = '\014',
 	ESCAPE = '\033',
 
-	/* See ESCAPE case in userinput() */
+	/* See `ESCAPE' case in `userinput()' */
 	ALT = '2' + 1,
 
 	UP = 'A',
@@ -41,7 +41,7 @@ int stringinput(struct context *c) {
 	end = c->string;
 	while (*end && *end != '\n') ++end;
 	l = end - c->string;
-	while (*end == '\n') ++end; /* scriptinput() repeatedly uses stringinput() */
+	while (*end == '\n') ++end; /* `scriptinput()' uses `stringinput()' */
 	if (l > MAXCHARS) {
 		note("Line too long, exceeds %d character limit", MAXCHARS);
 		return 0;
@@ -81,6 +81,10 @@ int scriptinput(struct context *c) {
 	c->string = c->map;
 	c->input = stringinput;
 
+	/* We want errors from this point forward to be reported by the script, not the
+	 * shell. */
+	arglist[0] = c->script;
+
 	return c->input(c);
 }
 
@@ -114,12 +118,18 @@ int userinput(struct context *c) {
 				for (i = end - cursor; i > 0; --i) putchar('\b');
 			}
 			break;
-		case CTRLC:
-			putchar('\n');
-			return quit(c);
-		case CTRLD:
-			putchar('\n');
-			return 0;
+		case EOF:
+			if (sigquit) {
+			case CTRLD:
+				putchar('\n');
+				return 0;
+			}
+			if (sigint) {
+				sigint = 0;
+				putchar('\n');
+				prompt();
+			}
+			break;
 		case CLEAR:
 			fputs("\033[H\033[J", stdout);
 			prompt();

@@ -2,6 +2,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/errno.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -9,26 +10,37 @@
 
 #include "bg.h"
 #include "builtin.h"
+#include "context.h"
+#include "input.h"
+#include "options.h"
 #include "utils.h"
 
+int sigquit, sigint;
 static struct {
 	pid_t id;
 	int status, done;
 } fgjob;
+static sigset_t shellsigmask;
+static struct sigaction fgaction;
+struct sigaction defaultaction;
+static pid_t pgid;
+sigset_t childsigmask;
 struct termios canonical;
 static struct termios raw;
-struct sigaction actbg, actdefault;
-static struct sigaction actall, actignore;
 
-static int setconfig(struct termios *mode) {
-	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
-		note("Unable to set termios config");
-		return 0;
-	}
-	return 1;
+static void sigquithandler(int sig) {
+	(void)sig;
+
+	sigquit = 1;
 }
 
-static void waitall(int sig) {
+static void siginthandler(int sig) {
+	(void)sig;
+
+	sigint = 1;
+}
+
+static void sigchldfghandler(int sig) {
 	int e, s;
 	pid_t id;
 
@@ -42,25 +54,59 @@ static void waitall(int sig) {
 		}
 	}
 	if (id == -1) fgjob.done = 1;
-	waitbg(sig);
+	sigchldbghandler(sig);
 	errno = e;
 }
 
-void initfg(void) {
-	if (tcgetattr(STDIN_FILENO, &canonical) == -1) exit(errno);
-	raw = canonical;
-	raw.c_lflag &= ~(ICANON | ECHO | ISIG);
-	if (!setconfig(&raw)) exit(EXIT_FAILURE);
-
-	actbg.sa_handler = waitbg;
-	actall.sa_handler = waitall;
-	actdefault.sa_handler = SIG_DFL;
-	actignore.sa_handler = SIG_IGN;
+void setsig(int sig, struct sigaction *act) {
+	if (sigaction(sig, act, NULL) == -1)
+		fatal("Unable to install %s handler", strsignal(sig));
 }
 
-void setsigchld(struct sigaction *act) {
-	if (sigaction(SIGCHLD, act, NULL) == -1)
-		fatal("Unable to install SIGCHLD handler");
+static int setconfig(struct termios *mode) {
+	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
+		note("Unable to configure TTY");
+		return 0;
+	}
+	return 1;
+}
+
+void initfg(void) {
+	struct sigaction action;
+	pid_t pid;
+
+	sigemptyset(&shellsigmask);
+	sigaddset(&shellsigmask, SIGTSTP);
+	sigaddset(&shellsigmask, SIGTTIN);
+	sigaddset(&shellsigmask, SIGTTOU);
+
+	action = (struct sigaction){.sa_handler = sigquithandler};
+	setsig(SIGHUP, &action);
+	setsig(SIGQUIT, &action);
+	setsig(SIGTERM, &action);
+
+	action = (struct sigaction){.sa_handler = siginthandler};
+	setsig(SIGINT, &action);
+
+	fgaction = (struct sigaction){.sa_handler = sigchldfghandler};
+
+	defaultaction = (struct sigaction){.sa_handler = SIG_DFL};
+	setsig(SIGTSTP, &defaultaction);
+	setsig(SIGTTOU, &defaultaction);
+	setsig(SIGTTIN, &defaultaction);
+
+	pid = getpid();
+	pgid = getpgrp();
+	if (login && pid != pgid && setpgid(0, pgid = pid) == -1) exit(errno);
+
+	if (sigprocmask(SIG_BLOCK, &shellsigmask, &childsigmask) == -1
+	    || tcsetpgrp(STDIN_FILENO, pgid) == -1)
+		exit(errno);
+
+	if (tcgetattr(STDIN_FILENO, &canonical) == -1) exit(errno);
+	raw = canonical;
+	raw.c_lflag &= ~(ICANON | ECHO);
+	if (!setconfig(&raw)) exit(EXIT_FAILURE);
 }
 
 int runfg(pid_t id) {
@@ -79,18 +125,23 @@ int runfg(pid_t id) {
 	}
 	removebg(id);
 
-	/* SIGCHLD handler is really the function that reaps the foreground process,
-	 * the waitpid() below is just to block the current thread of execution until
-	 * the foreground process has been reaped. */
+	/* The handler in `fgaction' is really what reaps the foreground process; the
+	 * `sigsuspend()' just blocks the current thread of execution until the
+	 * foreground process has been reaped. */
 	fgjob.id = id;
-	setsigchld(&actall);
-	while (!fgjob.done) sigsuspend(&actall.sa_mask);
-	setsigchld(&actdefault);
+	setsig(SIGCHLD, &fgaction);
+	while (!fgjob.done) {
+		sigsuspend(&shellsigmask);
+		if (sigquit) {
+			deinit();
+			exit(EXIT_SUCCESS);
+		}
+		if (sigint) sigint = 0;
+	}
+	setsig(SIGCHLD, &defaultaction);
 	fgjob.done = errno = 0;
 
-	if (sigaction(SIGTTOU, &actignore, NULL) == -1
-	    || tcsetpgrp(STDIN_FILENO, getpgrp()) == -1
-	    || sigaction(SIGTTOU, &actdefault, NULL) == -1) {
+	if (tcsetpgrp(STDIN_FILENO, pgid) == -1) {
 		deinit();
 		exit(errno);
 	}
@@ -109,7 +160,7 @@ int runfg(pid_t id) {
 			return runfg(id);
 		}
 	} else status = WTERMSIG(fgjob.status);
-	
+
 	return 1;
 }
 

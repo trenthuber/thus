@@ -10,14 +10,13 @@
 int login, interactive;
 
 void options(struct context *context) {
-	int opt;
 	char *p, *message = "[file | -c string] [arg ...] [-hl]\n"
 	                    "    <file> [arg ...]      Run script\n"
 	                    "    -c <string> [arg ...] Run string\n"
 	                    "    -h                    Show this help message\n"
 	                    "    -l                    Run as a login shell";
+	int opt;
 
-	opt = 0;
 	if (arglist[0][0] == '-') {
 		++arglist[0];
 		login = 1;
@@ -26,6 +25,7 @@ void options(struct context *context) {
 	interactive = 1;
 	context->input = userinput;
 
+	opt = 0;
 	while (opt != 'c' && (opt = getopt(argcount, arglist, ":c:hl")) != -1)
 		switch (opt) {
 		case 'c':
@@ -52,6 +52,10 @@ void options(struct context *context) {
 		interactive = 0;
 		context->script = arglist[optind];
 		context->input = scriptinput;
+
+		/* Until we're able to load the script, errors need to be reported by the
+		 * shell, not the script. */
+		arglist[optind] = arglist[0];
 	}
 	if (!interactive) {
 		argcount -= optind;

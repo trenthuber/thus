@@ -20,9 +20,48 @@ struct bglink {
 static struct {
 	struct bglink entries[MAXBG], *active, *free;
 } bgjobs;
+struct sigaction bgaction;
+
+void removebg(pid_t id) {
+	struct bglink *p, *prev;
+	
+	for (prev = NULL, p = bgjobs.active; p; prev = p, p = p->next)
+		if (p->job.id == id) break;
+	if (!p) return;
+
+	if (prev) prev->next = p->next; else bgjobs.active = p->next;
+	p->next = bgjobs.free;
+	bgjobs.free = p;
+}
+
+void sigchldbghandler(int sig) {
+	int e, s;
+	struct bglink *p;
+	pid_t id;
+
+	(void)sig;
+
+	e = errno;
+	p = bgjobs.active;
+	while (p) {
+		while ((id = waitpid(-p->job.id, &s, WNOHANG | WUNTRACED)) > 0)
+			if (WIFSTOPPED(s)) {
+				p->job.suspended = 1;
+				break;
+			}
+		if (id == -1) {
+			id = p->job.id;
+			p = p->next;
+			removebg(id);
+		} else p = p->next;
+	}
+	errno = e;
+}
 
 void initbg(void) {
 	size_t i;
+
+	bgaction = (struct sigaction){.sa_handler = sigchldbghandler};
 
 	for (i = 0; i < MAXBG - 1; ++i)
 		bgjobs.entries[i].next = &bgjobs.entries[i + 1];
@@ -65,41 +104,6 @@ int searchbg(pid_t id, struct bgjob *job) {
 	}
 
 	return 0;
-}
-
-void removebg(pid_t id) {
-	struct bglink *p, *prev;
-	
-	for (prev = NULL, p = bgjobs.active; p; prev = p, p = p->next)
-		if (p->job.id == id) break;
-	if (!p) return;
-
-	if (prev) prev->next = p->next; else bgjobs.active = p->next;
-	p->next = bgjobs.free;
-	bgjobs.free = p;
-}
-
-void waitbg(int sig) {
-	int e, s;
-	struct bglink *p;
-	pid_t id;
-
-	(void)sig;
-	e = errno;
-	p = bgjobs.active;
-	while (p) {
-		while ((id = waitpid(-p->job.id, &s, WNOHANG | WUNTRACED)) > 0)
-			if (WIFSTOPPED(s)) {
-				p->job.suspended = 1;
-				break;
-			}
-		if (id == -1) {
-			id = p->job.id;
-			p = p->next;
-			removebg(id);
-		} else p = p->next;
-	}
-	errno = e;
 }
 
 void deinitbg(void) {

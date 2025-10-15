@@ -1,7 +1,9 @@
+extern int sigquit, sigint;
+extern struct sigaction defaultaction;
+extern sigset_t childsigmask;
 extern struct termios canonical;
-extern struct sigaction actbg, actdefault;
 
+void setsig(int sig, struct sigaction *act);
 void initfg(void);
-void setsigchld(struct sigaction *act);
 int runfg(pid_t id);
 void deinitfg(void);

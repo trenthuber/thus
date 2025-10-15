@@ -60,6 +60,9 @@ static void redirectfiles(struct redirect *r) {
 static void exec(char *path, struct context *c) {
 	redirectfiles(c->redirects);
 
+	if (sigprocmask(SIG_SETMASK, &childsigmask, NULL) == -1)
+		note("Unable to unblock TTY signals");
+
 	if (isbuiltin(c->tokens)) exit(status);
 	execve(path, c->tokens, environ);
 	fatal("Couldn't find `%s' command", c->current.name);
@@ -71,9 +74,9 @@ int run(struct context *c) {
 	pid_t cpid, jobid;
 	static pid_t pipeid;
 
-	setsigchld(&actbg);
+	setsig(SIGCHLD, &bgaction);
 	if (!parse(c)) return 0;
-	setsigchld(&actdefault);
+	setsig(SIGCHLD, &defaultaction);
 
 	islist = c->prev.term > BG || c->current.term > BG;
 	if (c->t) {
