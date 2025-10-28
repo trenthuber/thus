@@ -9,8 +9,8 @@ thus is a custom Unix shell for POSIX platforms.
 - Conditional execution (`&&`, `||`)
 - File redirection (`<file`, `2>&1`, etc.)
 - Globbing (`*`, `?`, `[...]`)
-- Quoting with escape sequences (`"\r...\n"`)
-- Environment variables (`set`, `unset`, `$VAR$`, etc.)
+- Quoting (`'...', "..."`)
+- Variables (`set`, `unset`, `$VAR$`, etc.)
 - Aliasing (`alias`, `unalias`)
 - Configuration files (`~.thuslogin`, `~.thusrc`)
 - Cached history (`~.thushistory`)
@@ -49,18 +49,23 @@ where it takes a subtly different approach.
 
 ### Quotes
 
-Quoting is done with double quotes (`"..."`) and undergoes no shell
-substitution, similar to single quotes in Bourne shell. In place of
-substitution, quotes can be concatenated with surrounding tokens not separated
-by whitespace.
+Like most other shells, variables, tildes, and escape sequences will be expanded
+inside of double quotes, but not single quotes. *Unlike* other shells however,
+quotes do not concatenate with other arguments that are not separated from the
+quote by whitespace. For example, the command `echo "abc"def` would print
+`abc def` whereas other shells would combine them into a single argument and
+print `abcdef`.
 
-### Environment variables and aliases
+### Variables and aliases
 
-Environment variables are referred to by tokens that begin and end with a `$`.
-For example, evaluating the path would look like `$PATH$`. Setting environment
+Variables are referred to by strings of characters that begin and end with a
+`$`. For example, evaluating the path variable would look like `$PATH$`. Setting
 variables is done with the `set` built-in command, not with the `name=value`
 syntax. This syntax is similarly avoided when declaring aliases with the `alias`
 built-in command.
+
+Additionally, all shell variables are automatically made to be environment
+variables, so there's no need to `export` variables.
 
 ### Leading and trailing slashes
 
@@ -68,14 +73,17 @@ Prepending `./` to executables located in the current directory is not mandatory
 unless there already exists an executable in `$PATH$` with the same name that
 you would like to override.
 
-The `$HOME$`, `$PWD$`, and `$PATH$` environment variables are always initialized
-with trailing slashes. Therefore, whenever one of these variables or `~` is
+The `$HOME$`, `$PWD$`, and `$PATH$` variables are always initialized with
+trailing slashes. Therefore, whenever one of these variables or `~` is
 substituted in the shell, it will retain the trailing slash.
 
 ### File redirection
 
-For the sake of syntactic consistency, there is no whitespace between a file
-redirection operator and the filename that comes after it.
+If there is whitespace between a file redirection operator and a filename
+following it, then it is *not* parsed as a file redirection, but instead as two
+separate arguments. Something like `ls >file` would redirect the output of the
+`ls` command to `file`, whereas `ls > file` would list any files named `>` and
+`file`.
 
 ## Resources
 

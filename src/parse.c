@@ -10,9 +10,9 @@
 #include "utils.h"
 
 int parse(struct context *c) {
-	int globbing, e, offset, globflags;
+	int globbing, quote, v, offset, globflags;
 	size_t prevsublen, sublen;
-	char *stlend, *p, *end, *env, term, **sub;
+	char *stlend, *p, *end, *var, term, **sub;
 	long l;
 	static glob_t globs;
 
@@ -25,30 +25,23 @@ int parse(struct context *c) {
 	c->r->mode = NONE;
 	c->prev = c->current;
 
+	for (end = c->b; *end; ++end);
+	prevsublen = globbing = quote = 0;
+	sub = NULL;
 	if (globs.gl_pathc) {
 		globfree(&globs);
 		globs.gl_pathc = 0;
 	}
-	prevsublen = globbing = 0;
 
 	for (*c->t = c->b; *c->b; ++c->b) switch (*c->b) {
 	case '<':
 	case '>':
-		if (c->r->mode) {
-			note("Invalid syntax for file redirection");
-			return quit(c);
-		}
-		if (c->r - c->redirects == MAXREDIRECTS) {
-			note("Too many file redirects, exceeds %d redirect limit", MAXREDIRECTS);
-			return quit(c);
-		}
-		if (*c->t != c->b) {
-			if ((l = strtol(*c->t, &stlend, 10)) < 0 || l > INT_MAX || stlend != c->b) {
-				note("Invalid value for a file redirection");
-				return quit(c);
-			}
-			c->r->newfd = l;
-		} else c->r->newfd = *c->b == '>';
+		if (quote || c->r->mode) break;
+
+		if (*c->t == c->b) c->r->newfd = *c->b == '>';
+		else if ((c->r->newfd = strtol(*c->t, &stlend, 10)) < 0
+		         || c->r->newfd > INT_MAX || stlend != c->b)
+			break;
 		c->r->mode = *c->b;
 		if (*(c->b + 1) == '>') {
 			++c->r->mode;
@@ -56,116 +49,129 @@ int parse(struct context *c) {
 		}
 		c->r->oldname = c->b + 1;
 		if (*(c->b + 1) == '&') ++c->b;
+
 		break;
 	case '$':
 		p = c->b++;
 		while (*c->b && *c->b != '$') ++c->b;
 		if (!*c->b) {
-			note("Environment variable lacks a terminating `$'");
+			note("Variable left open-ended");
 			return quit(c);
 		}
 		*c->b++ = '\0';
-		for (end = c->b; *end; ++end);
 
 		l = strtol(p + 1, &stlend, 10);
 		errno = 0;
-		if (stlend == c->b - 1) env = l >= 0 && l < argcount ? arglist[l] : c->b - 1;
+		if (stlend == c->b - 1) var = l >= 0 && l < argcount ? arglist[l] : c->b - 1;
 		else if (strcmp(p + 1, "^") == 0) {
-			if (!sprintf(env = (char [12]){0}, "%d", status)) {
+			if (!sprintf(var = (char [12]){0}, "%d", status)) {
 				note("Unable to get previous command status");
 				return quit(c);
 			}
-		} else if (!(env = getenv(p + 1))) {
-			note("Environment variable does not exist");
-			return quit(c);
-		}
+		} else if (!(var = getenv(p + 1))) var = "";
 
-		e = strlen(env);
-		offset = e - (c->b - p);
+		v = strlen(var);
+		offset = v - (c->b - p);
 		memmove(c->b + offset, c->b, end - c->b + 1);
-		strncpy(p, env, e);
+		strncpy(p, var, v);
 		c->b += offset - 1;
+		end += offset;
 
 		break;
 	case '~':
-		for (end = c->b; *end; ++end);
 		offset = strlen(home);
 		memmove(c->b + offset, c->b + 1, end - c->b);
 		strncpy(c->b, home, offset);
 		c->b += offset - 1;
+		end += offset;
 		break;
-	case '[':
-		while (*c->b && *c->b != ']') ++c->b;
+	case '\'':
+		if (quote) break;
+
+		*c->b = '\0';
+		if (*c->t != c->b) ++c->t;
+		*c->t = ++c->b;
+
+		while (*c->b && *c->b != '\'') ++c->b;
 		if (!*c->b) {
-			note("Range in glob left open-ended");
-			return quit(c);
-		}
-	case '*':
-	case '?':
-		globbing = 1;
-		break;
-	case '"':
-		for (end = (p = c->b) + 1, c->b = NULL; *end; ++end) if (!c->b) {
-			if (*end == '"') c->b = end;
-			if (*end == '\\') ++end;
-		}
-		if (!c->b) {
 			note("Quote left open-ended");
 			return quit(c);
 		}
-		memmove(p, p + 1, end-- - p);
-		--c->b;
 
-		while (p != c->b) if (*p++ == '\\') {
-			switch (*p) {
-			case 't':
-				*p = '\t';
-				break;
-			case 'v':
-				*p = '\v';
-				break;
-			case 'r':
-				*p = '\r';
-				break;
-			case 'n':
-				*p = '\n';
-				break;
-			}
-			memmove(p - 1, p, end-- - p + 1);
-			--c->b;
+		*c->b = '\0';
+		++c->t;
+		*c->t = c->b + 1;
+
+		break;
+	case '"':
+		*c->b = '\0';
+		if (quote || *c->t != c->b) ++c->t;
+		*c->t = c->b + 1;
+
+		quote = !quote;
+
+		break;
+	case '\\':
+		if (!quote) break;
+		switch (*(c->b + 1)) {
+		case '$':
+		case '"':
+		case '\\':
+			break;
+		default:
+			memmove(c->b, c->b + 1, end-- - c->b--);
+			*(c->b + 1) = *c->b;
 		}
-		memmove(p, p + 1, end-- - p);
-		--c->b;
+		memmove(c->b, c->b + 1, end-- - c->b);
+		break;
+	case '*':
+	case '?':
+	case '[':
+		if (quote) break;
+
+		if (*c->b == '[') {
+			p = c->b;
+			while (*p && *p != ' ' && *p != ']') ++p;
+			if (*p != ']') break;
+			c->b = p;
+		}
+		globbing = 1;
 
 		break;
 	case '#':
-		*(c->b + 1) = '\0';
 	case '&':
 	case '|':
 	case ';':
 	case ' ':
+		if (quote) break;
+		if (*c->b == '#') *(c->b + 1) = '\0';
+
 		term = *c->b;
 		*c->b = '\0';
 
-		if (c->r->mode) {
-			switch (*c->r->oldname) {
-			case '&':
-				if ((l = strtol(++c->r->oldname, &stlend, 10)) < 0 || l > INT_MAX
-				    || *stlend) {
-				case '\0':
-					note("Invalid syntax for file redirection");
-					return quit(c);
-				}
+		if (c->r->mode) switch (*c->r->oldname) {
+		case '&':
+			++c->r->oldname;
+			if (*c->r->oldname && (l = strtol(c->r->oldname, &stlend, 10)) >= 0
+			    && l <= INT_MAX && !*stlend) {
 				c->r->oldfd = l;
 				c->r->oldname = NULL;
+			default:
+				if (c->r - c->redirects == MAXREDIRECTS) {
+					note("Too many file redirects, exceeds %d redirect limit", MAXREDIRECTS);
+					return quit(c);
+				}
+				++c->r;
+				*c->t = c->b;
 			}
-			(++c->r)->mode = NONE;
-			globbing = 0;
+		case '\0':
+			c->r->mode = NONE;
+		}
 
-			*c->t = c->b;
-		} else if (!c->alias && c->t == c->tokens && (sub = getalias(c->tokens[0]))
-		           || globbing) {
-			if (globbing) {
+		if (*c->t != c->b) {
+			if (!c->alias && c->t == c->tokens && (sub = getalias(c->tokens[0])))
+				for (sublen = 0; sub[sublen]; ++sublen);
+			else if (globbing) {
 				globflags = GLOB_MARK;
 				if (prevsublen) globflags |= GLOB_APPEND;
 				switch (glob(*c->t, globflags, NULL, &globs)) {
@@ -179,12 +185,14 @@ int parse(struct context *c) {
 				sub = globs.gl_pathv + prevsublen;
 				prevsublen = globs.gl_pathc;
 				globbing = 0;
-			} else for (sublen = 0; sub[sublen]; ++sublen);
-
-			memcpy(c->t, sub, sublen * sizeof*c->t);
-			c->t += sublen;
-			*c->t = c->b;
-		} else if (*c->t != c->b) ++c->t;
+			}
+			if (sub) {
+				memcpy(c->t, sub, sublen * sizeof*c->t);
+				c->t += sublen - 1;
+				sub = NULL;
+			}
+			++c->t;
+		}
 
 		if (term != ' ') {
 			if (c->t != c->tokens) {
@@ -208,7 +216,13 @@ int parse(struct context *c) {
 
 			return 1;
 		}
+
 		*c->t = c->b + 1;
+	}
+
+	if (quote) {
+		note("Quote left open-ended");
+		return quit(c);
 	}
 
 	switch (c->current.term) {
