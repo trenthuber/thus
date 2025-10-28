@@ -1,8 +1,10 @@
 # Installing thus
 
+While running a quick `chsh` might be sufficient for proper shells, installing thus as a user's default shell without any unwanted behavior resulting is a bit more involved.
+
 ## thus is not a POSIX compliant shell
 
-thus uses a distinctly different syntax than other POSIX compliant shells. While fine for an end user to learn, some programs rely on POSIX compilant shells to run internal commands or scripts. Therefore, **it is not recommended that thus be set to the user's default shell**. Instead, thus should be automatically run by a separate POSIX compilant shell which in turn is set as the user's default shell. This allows utilities to function as before while presenting thus as the default shell in an interactive session.
+thus uses a distinctly different syntax than other POSIX compliant shells. This is fine for an end user to learn, but some programs rely on POSIX compliant shells to run internal commands or scripts. Therefore, **it is not recommended that thus be set to the user's default shell**. Instead, thus should be automatically run by a separate POSIX compliant shell which in turn is set as the user's default shell. This allows utilities to function as before while presenting thus as the default shell in an interactive session.
 
 ## Example configuration
 
