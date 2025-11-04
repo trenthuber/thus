@@ -225,14 +225,6 @@ int parse(struct context *c) {
 		return quit(c);
 	}
 
-	switch (c->current.term) {
-	case AND:
-	case PIPE:
-	case OR:
-		note("Expected another command");
-		return quit(c);
-	}
-
 	if (c->t == c->tokens) c->t = NULL;
 	if (c->r == c->redirects) c->r = NULL;
 	c->b = NULL;

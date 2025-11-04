@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/errno.h>
 #include <sys/wait.h>
@@ -15,6 +16,8 @@
 #include "which.h"
 
 extern char **environ;
+
+int verbose;
 
 static int closepipe(struct command c) {
 	int result;
@@ -69,8 +72,8 @@ static void exec(char *path, struct context *c) {
 }
 
 int run(struct context *c) {
+	char *p;
 	int islist, ispipe, ispipestart, ispipeend;
-	char *path;
 	pid_t cpid, jobid;
 	static pid_t pipeid;
 
@@ -78,13 +81,33 @@ int run(struct context *c) {
 	if (!parse(c)) return 0;
 	setsig(SIGCHLD, &defaultaction);
 
+	if (verbose && (c->t || c->r)) {
+		if (c->t) {
+			for (c->t = c->tokens; *c->t; ++c->t) {
+				for (p = *c->t; *p && *p != ' '; ++p);
+				p = p == *c->t || *p == ' ' ? "'" : "";
+				if (c->t != c->tokens) putchar(' ');
+				printf("%s%s%s", p, *c->t, p);
+			}
+			if (c->r) putchar(' ');
+		}
+		if (c->r) for (c->r = c->redirects; c->r->mode; ++c->r) {
+			if (c->r != c->redirects) putchar(' ');
+			printf("%d%.*s", c->r->newfd, (c->r->mode & 1) + 1, &"<>>"[c->r->mode & 2]);
+			if (c->r->oldname) printf("%s", c->r->oldname);
+			else printf("&%d", c->r->oldfd);
+		}
+		if (c->current.term == BG) putchar('&');
+		fputs(c->current.term == PIPE ? " | " : "\n", stdout);
+	}
+
 	islist = c->prev.term > BG || c->current.term > BG;
 	if (c->t) {
 		if (c->current.term == BG && bgfull()) {
 			note("Unable to place job in background, too many background jobs");
 			return quit(c);
 		}
-		if (!(path = getpath(c->current.name))) {
+		if (!(p = getpath(c->current.name))) {
 			note("Couldn't find `%s' command", c->current.name);
 			if (c->prev.term == PIPE) killpg(pipeid, SIGKILL);
 			return quit(c);
@@ -114,7 +137,7 @@ int run(struct context *c) {
 						fatal("Unable to duplicate write end of `%s' pipe", c->current.name);
 					if (!closepipe(c->current)) exit(EXIT_FAILURE);
 				}
-				exec(path, c);
+				exec(p, c);
 			}
 			if (ispipestart) pipeid = cpid;
 			else if (!closepipe(c->prev)) {
@@ -126,7 +149,7 @@ int run(struct context *c) {
 		else if ((jobid = cpid = fork()) == -1) {
 			note("Unable to fork child process");
 			return quit(c);
-		} else if (cpid == 0) exec(path, c);
+		} else if (cpid == 0) exec(p, c);
 
 		if (cpid) {
 			if (setpgid(cpid, jobid) == -1) {
@@ -150,7 +173,10 @@ int run(struct context *c) {
 		} else if (c->current.term == OR) return clear(c);
 	} else {
 		if (islist) {
-			if (c->prev.term == PIPE) killpg(pipeid, SIGKILL);
+			if (c->prev.term == PIPE) {
+				killpg(pipeid, SIGKILL);
+				if (verbose) putchar('\n');
+			}
 			note("Expected command");
 			return quit(c);
 		}
