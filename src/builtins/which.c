@@ -39,7 +39,7 @@ char *getpath(char *file) {
 
 	type = PATH;
 	if (!(slash = strchr(file, '/'))) {
-		if ((entry = getrawalias(file))) {
+		if ((entry = getaliasrhs(file))) {
 			type = ALIAS;
 			return entry;
 		}

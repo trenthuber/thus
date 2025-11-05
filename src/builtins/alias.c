@@ -10,27 +10,34 @@
 #define MAXALIAS 25
 
 static struct {
-	struct {
+	struct entry {
 		char lhs[MAXCHARS - 5], *rhs;
 	} entries[MAXALIAS + 1];
 	size_t size;
 } aliases;
 
-char *getrawalias(char *token) {
+static size_t getindex(char *lhs) {
 	size_t i;
 
 	for (i = 0; i < aliases.size; ++i)
-		if (strcmp(token, aliases.entries[i].lhs) == 0) return aliases.entries[i].rhs;
+		if (strcmp(aliases.entries[i].lhs, lhs) == 0) break;
 
-	return NULL;
+	return i;
 }
 
-char **getalias(char *token) {
+char *getaliasrhs(char *lhs) {
+	size_t i;
+
+	if ((i = getindex(lhs)) == aliases.size) return NULL;
+	return aliases.entries[i].rhs;
+}
+
+char **getalias(char *lhs) {
 	char *rhs;
 	size_t l;
 	static struct context context;
 
-	if (!(rhs = getrawalias(token))) return NULL;
+	if (!(rhs = getaliasrhs(lhs))) return NULL;
 
 	while (*rhs == ' ') ++rhs;
 	strcpy(context.buffer, rhs);
@@ -46,9 +53,22 @@ char **getalias(char *token) {
 	return context.tokens;
 }
 
+int removealias(char *lhs) {
+	size_t i;
+	struct entry *entry;
+
+	if ((i = getindex(lhs)) == aliases.size) return 0;
+	entry = &aliases.entries[i];
+	memmove(entry, entry + 1, (--aliases.size - i) * sizeof(*entry));
+	for (; i < aliases.size; ++i, ++entry)
+		entry->rhs = (void *)entry->rhs - sizeof(*entry);
+
+	return 1;
+}
+
 BUILTIN(alias) {
 	size_t i;
-	char *lhs;
+	struct entry *entry;
 
 	switch (argc) {
 	case 1:
@@ -60,15 +80,13 @@ BUILTIN(alias) {
 			note("Unable to add alias `%s', maximum reached (%d)", argv[1], MAXALIAS);
 			return EXIT_FAILURE;
 		}
-		for (i = 0; i < aliases.size; ++i)
-			if (strcmp(aliases.entries[i].lhs, argv[1]) == 0) break;
 
-		lhs = aliases.entries[i].lhs;
+		entry = &aliases.entries[i = getindex(argv[1])];
 		if (i == aliases.size) {
-			strcpy(lhs, argv[1]);
+			strcpy(entry->lhs, argv[1]);
 			++aliases.size;
 		}
-		strcpy(aliases.entries[i].rhs = lhs + strlen(lhs) + 1, argv[2]);
+		strcpy(entry->rhs = entry->lhs + strlen(entry->lhs) + 1, argv[2]);
 
 		break;
 	default:
