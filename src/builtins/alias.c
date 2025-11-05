@@ -11,37 +11,37 @@
 
 static struct {
 	struct entry {
-		char lhs[MAXCHARS - 5], *rhs;
+		char name[MAXCHARS - 5], *value;
 	} entries[MAXALIAS + 1];
 	size_t size;
 } aliases;
 
-static size_t getindex(char *lhs) {
+static size_t getindex(char *name) {
 	size_t i;
 
 	for (i = 0; i < aliases.size; ++i)
-		if (strcmp(aliases.entries[i].lhs, lhs) == 0) break;
+		if (strcmp(aliases.entries[i].name, name) == 0) break;
 
 	return i;
 }
 
-char *getaliasrhs(char *lhs) {
+char *getaliasvalue(char *name) {
 	size_t i;
 
-	if ((i = getindex(lhs)) == aliases.size) return NULL;
-	return aliases.entries[i].rhs;
+	if ((i = getindex(name)) == aliases.size) return NULL;
+	return aliases.entries[i].value;
 }
 
-char **getalias(char *lhs) {
-	char *rhs;
+char **getalias(char *name) {
+	char *value;
 	size_t l;
 	static struct context context;
 
-	if (!(rhs = getaliasrhs(lhs))) return NULL;
+	if (!(value = getaliasvalue(name))) return NULL;
 
-	while (*rhs == ' ') ++rhs;
-	strcpy(context.buffer, rhs);
-	l = strlen(rhs);
+	while (*value == ' ') ++value;
+	strcpy(context.buffer, value);
+	l = strlen(value);
 	context.buffer[l + 1] = '\0';
 	context.buffer[l] = ';';
 	context.alias = 1;
@@ -53,15 +53,15 @@ char **getalias(char *lhs) {
 	return context.tokens;
 }
 
-int removealias(char *lhs) {
+int removealias(char *name) {
 	size_t i;
 	struct entry *entry;
 
-	if ((i = getindex(lhs)) == aliases.size) return 0;
+	if ((i = getindex(name)) == aliases.size) return 0;
 	entry = &aliases.entries[i];
 	memmove(entry, entry + 1, (--aliases.size - i) * sizeof(*entry));
 	for (; i < aliases.size; ++i, ++entry)
-		entry->rhs = (void *)entry->rhs - sizeof(*entry);
+		entry->value = (void *)entry->value - sizeof(*entry);
 
 	return 1;
 }
@@ -73,7 +73,7 @@ BUILTIN(alias) {
 	switch (argc) {
 	case 1:
 		for (i = 0; i < aliases.size; ++i)
-			printf("%s = \"%s\"\n", aliases.entries[i].lhs, aliases.entries[i].rhs);
+			printf("%s = \"%s\"\n", aliases.entries[i].name, aliases.entries[i].value);
 		break;
 	case 3:
 		if (aliases.size == MAXALIAS) {
@@ -83,14 +83,14 @@ BUILTIN(alias) {
 
 		entry = &aliases.entries[i = getindex(argv[1])];
 		if (i == aliases.size) {
-			strcpy(entry->lhs, argv[1]);
+			strcpy(entry->name, argv[1]);
 			++aliases.size;
 		}
-		strcpy(entry->rhs = entry->lhs + strlen(entry->lhs) + 1, argv[2]);
+		strcpy(entry->value = entry->name + strlen(entry->name) + 1, argv[2]);
 
 		break;
 	default:
-		return usage(argv[0], "[lhs rhs]");
+		return usage(argv[0], "[name value]");
 	}
 
 	return EXIT_SUCCESS;

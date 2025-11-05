@@ -4,7 +4,7 @@
 #include "builtin.h"
 
 BUILTIN(unalias) {
-	if (argc != 2) return usage(argv[0], "lhs");
+	if (argc != 2) return usage(argv[0], "name");
 
 	return removealias(argv[1]) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

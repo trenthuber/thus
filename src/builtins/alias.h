@@ -1,3 +1,3 @@
-char *getaliasrhs(char *lhs);
-char **getalias(char *lhs);
-int removealias(char *lhs);
+char *getaliasvalue(char *name);
+char **getalias(char *name);
+int removealias(char *name);
