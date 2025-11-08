@@ -55,12 +55,13 @@ int gethistory(int back, char *buffer) {
 	return 1;
 }
 
-void sethistory(char *buffer) {
-	strcpy(history.entries[history.t], buffer);
-	history.c = INC(t);
-	if (history.t == history.b) INC(b);
-	if (history.t == history.s) INC(s);
-	*history.entries[history.t] = '\0';
+void addhistory(char *buffer) {
+	if (buffer) {
+		strcpy(history.entries[history.t], buffer);
+		if (INC(t) == history.b) INC(b);
+		if (history.t == history.s) INC(s);
+	}
+	*history.entries[history.c = history.t] = '\0';
 }
 
 static void writehistory(FILE *file) {

@@ -11,34 +11,18 @@
 #include "bg.h"
 #include "builtin.h"
 #include "context.h"
-#include "input.h"
 #include "options.h"
+#include "signals.h"
 #include "utils.h"
 
-int sigquit, sigint;
 static struct {
 	pid_t id;
 	int status, done;
 } fgjob;
-static sigset_t shellsigmask;
 static struct sigaction fgaction;
-struct sigaction defaultaction;
 static pid_t pgid;
-sigset_t childsigmask;
 struct termios canonical;
 static struct termios raw;
-
-static void sigquithandler(int sig) {
-	(void)sig;
-
-	sigquit = 1;
-}
-
-static void siginthandler(int sig) {
-	(void)sig;
-
-	sigint = 1;
-}
 
 static void sigchldfghandler(int sig) {
 	int e, s;
@@ -58,11 +42,6 @@ static void sigchldfghandler(int sig) {
 	errno = e;
 }
 
-void setsig(int sig, struct sigaction *act) {
-	if (sigaction(sig, act, NULL) == -1)
-		fatal("Unable to install %s handler", strsignal(sig));
-}
-
 static int setconfig(struct termios *mode) {
 	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
 		note("Unable to configure TTY");
@@ -72,35 +51,15 @@ static int setconfig(struct termios *mode) {
 }
 
 void initfg(void) {
-	struct sigaction action;
 	pid_t pid;
 
-	sigemptyset(&shellsigmask);
-	sigaddset(&shellsigmask, SIGTSTP);
-	sigaddset(&shellsigmask, SIGTTIN);
-	sigaddset(&shellsigmask, SIGTTOU);
-
-	action = (struct sigaction){.sa_handler = sigquithandler};
-	setsig(SIGHUP, &action);
-	setsig(SIGQUIT, &action);
-	setsig(SIGTERM, &action);
-
-	action = (struct sigaction){.sa_handler = siginthandler};
-	setsig(SIGINT, &action);
-
 	fgaction = (struct sigaction){.sa_handler = sigchldfghandler};
-
-	defaultaction = (struct sigaction){.sa_handler = SIG_DFL};
-	setsig(SIGTSTP, &defaultaction);
-	setsig(SIGTTOU, &defaultaction);
-	setsig(SIGTTIN, &defaultaction);
 
 	pid = getpid();
 	pgid = getpgrp();
 	if (login && pid != pgid && setpgid(0, pgid = pid) == -1) exit(errno);
 
-	if (sigprocmask(SIG_BLOCK, &shellsigmask, &childsigmask) == -1
-	    || tcsetpgrp(STDIN_FILENO, pgid) == -1)
+	if (tcsetpgrp(STDIN_FILENO, pgid) == -1)
 		exit(errno);
 
 	if (tcgetattr(STDIN_FILENO, &canonical) == -1) exit(errno);

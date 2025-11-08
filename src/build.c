@@ -1,7 +1,7 @@
 #include "../external/cbs/cbs.c"
 
-#define SRC1 "context", "history"
-#define SRC2 "input", "main", "options", "parse", "run", "utils"
+#define SRC1 "context", "history", "input", "signals"
+#define SRC2 "main", "options", "parse", "run", "utils"
 
 int main(void) {
 	char **src;

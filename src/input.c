@@ -1,15 +1,19 @@
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include "context.h"
-#include "fg.h"
 #include "history.h"
+#include "signals.h"
 #include "utils.h"
+
+#define OFFSET(x) ((promptlen + (x) - start) % window.ws_col)
 
 enum {
 	CTRLD = '\004',
@@ -28,8 +32,16 @@ enum {
 	DEL = '\177',
 };
 
+static struct winsize window;
+static char *start, *cursor, *end;
+static size_t promptlen;
+
+void getcolumns(void) {
+	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &window) == -1 && window.ws_col == 0)
+		window.ws_col = 80;
+}
+
 int stringinput(struct context *c) {
-	char *end;
 	size_t l;
 
 	if (!c->string[0]) {
@@ -88,127 +100,175 @@ int scriptinput(struct context *c) {
 	return c->input(c);
 }
 
-static void prompt(void) {
-	char *p;
+static void moveright(void) {
+	putchar(*cursor);
+	if (OFFSET(cursor++) == window.ws_col - 1) putchar('\n');
+}
 
-	if (!(p = getenv("PROMPT")) && setenv("PROMPT", p = ">", 1) == -1)
+static void prompt(void) {
+	char *p, *oldstart, *oldcursor;
+
+	if (!(p = getenv("PROMPT")) && setenv("PROMPT", p = "> ", 1) == -1)
 		note("Unable to update $PROMPT$ environment variable");
-	printf("%s ", p);
+
+	oldstart = start;
+	oldcursor = cursor;
+
+	promptlen = 0;
+	cursor = start = p;
+	while (*cursor) moveright();
+	promptlen = cursor - start;
+
+	cursor = oldcursor;
+	start = oldstart;
+}
+
+static void moveleft(void) {
+	if (OFFSET(cursor--)) putchar('\b');
+	else printf("\033[A\033[%dC", window.ws_col - 1);
+}
+
+static void newline(void) {
+	size_t i;
+
+	for (i = (promptlen + end - cursor) / window.ws_col; i > 0; --i) putchar('\n');
+	if (OFFSET(cursor) > OFFSET(end)) putchar('\n');
+	if (OFFSET(end)) putchar('\n');
+	putchar('\r');
 }
 
 int userinput(struct context *c) {
-	char *start, *cursor, *end;
-	int current, i;
-	size_t oldlen, newlen;
+	int current;
+	char *oldcursor, *oldend;
 
 	clear(c);
 	end = cursor = start = c->buffer;
 	while (start == end) {
 		prompt();
-		while ((current = getchar()) != '\n') switch (current) {
-		default:
-			if (current >= ' ' && current <= '~') {
-				if (end - start == MAXCHARS) break;
-				memmove(cursor + 1, cursor, end - cursor);
-				*cursor++ = current;
-				*++end = '\0';
+		while ((current = getchar()) != '\n') {
+			switch (current) {
+			default:
+				if (current >= ' ' && current <= '~') {
+					if (end - start == MAXCHARS) break;
+					memmove(cursor + 1, cursor, end - cursor);
+					*cursor = current;
+					*++end = '\0';
 
-				putchar(current);
-				fputs(cursor, stdout);
-				for (i = end - cursor; i > 0; --i) putchar('\b');
-			}
-			break;
-		case EOF:
-			if (sigquit) {
-			case CTRLD:
-				putchar('\n');
-				return 0;
-			}
-			if (sigint) {
-				sigint = 0;
-				putchar('\n');
+					oldcursor = cursor + 1;
+					while (cursor != end) moveright();
+					while (cursor != oldcursor) moveleft();
+				}
+				break;
+			case EOF:
+				if (sigquit) {
+				case CTRLD:
+					newline();
+					return 0;
+				}
+				if (sigint) {
+					sigint = 0;
+
+					newline();
+					prompt();
+
+					end = cursor = start;
+					*start = '\0';
+
+					addhistory(NULL);
+				}
+				if (sigwinch) {
+					sigwinch = 0;
+
+					getcolumns();
+				}
+				break;
+			case CLEAR:
+				fputs("\033[H\033[J", stdout);
 				prompt();
-			}
-			break;
-		case CLEAR:
-			fputs("\033[H\033[J", stdout);
-			prompt();
-			fputs(c->buffer, stdout);
-			break;
+				oldcursor = cursor;
+				cursor = start;
+				while (cursor != end) moveright();
+				while (cursor != oldcursor) moveleft();
+				break;
 
-			/* This is a very minimal way to handle arrow keys. All modifiers except for
-			 * the ALT key are processed but ignored.
-			 *
-			 * See "Terminal Input Sequences" reference in `README.md'. */
-		case ESCAPE:
-			if ((current = getchar()) == '[') {
-				while ((current = getchar()) >= '0' && current <= '9');
-				if (current == ';') {
-					if ((current = getchar()) == ALT) switch ((current = getchar())) {
+				/* This is a very minimal way to handle arrow keys. All modifiers except for
+				 * the ALT key are processed but ignored.
+				 *
+				 * See "Terminal Input Sequences" reference in `README.md'. */
+			case ESCAPE:
+				if ((current = getchar()) == '[') {
+					while ((current = getchar()) >= '0' && current <= '9');
+					if (current == ';') {
+						if ((current = getchar()) == ALT) switch ((current = getchar())) {
+						case LEFT:
+							current = BACKWARD;
+							break;
+						case RIGHT:
+							current = FORWARD;
+							break;
+						} else if ((current = getchar()) >= '0' && current <= '6')
+							current = getchar();
+					}
+					switch (current) {
+					case UP:
+					case DOWN:
+						oldend = end;
+
+						oldcursor = cursor;
+						if (!gethistory(current == UP, c->buffer)) break;
+						end = cursor = start + strlen(start);
+						while (cursor < oldend) *cursor++ = ' ';
+						cursor = oldcursor;
+
+						while (cursor != start) moveleft();
+						while (cursor < end || cursor < oldend) moveright();
+						while (cursor != end) moveleft();
+
+						*end = '\0';
+
+						break;
 					case LEFT:
-						current = BACKWARD;
+						if (cursor > start) moveleft();
 						break;
 					case RIGHT:
-						current = FORWARD;
+						if (cursor < end) moveright();
 						break;
-					} else if ((current = getchar()) >= '0' && current <= '6')
-						current = getchar();
+					}
 				}
 				switch (current) {
-				case UP:
-				case DOWN:
-					oldlen = strlen(c->buffer);
-					if (!gethistory(current == UP, c->buffer)) break;
-					newlen = strlen(c->buffer);
-					end = cursor = start + newlen;
-
-					putchar('\r');
-					prompt();
-					fputs(c->buffer, stdout);
-					for (i = oldlen - newlen; i > 0; --i) putchar(' ');
-					for (i = oldlen - newlen; i > 0; --i) putchar('\b');
-
+				case FORWARD:
+					while (cursor != end && *cursor != ' ') moveright();
+					while (cursor != end && *cursor == ' ') moveright();
 					break;
-				case LEFT:
-					if (cursor > start) putchar((--cursor, '\b'));
-					break;
-				case RIGHT:
-					if (cursor < end) putchar(*cursor++);
+				case BACKWARD:
+					while (cursor != start && *(cursor - 1) == ' ') moveleft();
+					while (cursor != start && *(cursor - 1) != ' ') moveleft();
 					break;
 				}
-			}
-			switch (current) {
-			case FORWARD:
-				while (cursor != end && *cursor != ' ') putchar(*cursor++);
-				while (cursor != end && *cursor == ' ') putchar(*cursor++);
 				break;
-			case BACKWARD:
-				while (cursor != start && *(cursor - 1) == ' ') putchar((--cursor, '\b'));
-				while (cursor != start && *(cursor - 1) != ' ') putchar((--cursor, '\b'));
+			case DEL:
+				if (cursor == start) break;
+				memmove(oldcursor = cursor - 1, cursor, end - cursor);
+				*(end - 1) = ' ';
+
+				moveleft();
+				while (cursor != end) moveright();
+				while (cursor != oldcursor) moveleft();
+
+				*--end = '\0';
+
 				break;
 			}
-			break;
-
-		case DEL:
-			if (cursor == start) break;
-			memmove(cursor - 1, cursor, end - cursor);
-			--cursor;
-			*--end = '\0';
-
-			putchar('\b');
-			fputs(cursor, stdout);
-			putchar(' ');
-			for (i = end - cursor + 1; i > 0; --i) putchar('\b');
-
-			break;
 		}
-		putchar('\n');
+		newline();
 	}
 
 	while (*start == ' ') ++start;
 	if (start == end) return quit(c);
+	while (*(end - 1) == ' ') --end;
+	*end = '\0';
 
-	sethistory(c->buffer);
+	addhistory(start);
 
 	*end++ = ';';
 	*end = '\0';

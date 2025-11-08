@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,8 +9,11 @@
 #include <unistd.h>
 
 #include "bg.h"
+#include "context.h"
 #include "fg.h"
 #include "history.h"
+#include "input.h"
+#include "signals.h"
 
 int argcount, status;
 char **arglist, *home;
@@ -80,6 +84,9 @@ void init(void) {
 	                      "/usr/bin/:/usr/sbin/:/bin/:/sbin/", 1) == -1)
 		note("Unable to initialize $PATH$");
 
+	getcolumns();
+
+	initsignals();
 	initfg();
 	initbg();
 	inithistory();

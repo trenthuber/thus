@@ -12,6 +12,7 @@
 #include "context.h"
 #include "fg.h"
 #include "parse.h"
+#include "signals.h"
 #include "utils.h"
 #include "which.h"
 
