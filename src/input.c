@@ -221,6 +221,8 @@ int userinput(struct context *c) {
 						cursor = oldcursor;
 
 						while (cursor != start) moveleft();
+						putchar('\r');
+						prompt();
 						while (cursor < end || cursor < oldend) moveright();
 						while (cursor != end) moveleft();
 
