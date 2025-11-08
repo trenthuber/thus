@@ -22,7 +22,7 @@ that are executed at login and during an interactive session. For sh, the login
 configuration file is `.profile`.
 
 ```console
-# .profile
+# ~.profile
 
 ENV=$HOME/.shrc
 export ENV
@@ -34,16 +34,37 @@ THUSLOGIN=-l
 interactive sessions, in this case, `.shrc`.
 
 ```console
-# .shrc
+# ~.shrc
 
-test -z "$EXEUNT" && echo $- | grep -q i && exec thus $THUSLOGIN
+test -z "$ESCAPE" && echo $- | grep -q i && exec thus $THUSLOGIN
 ```
 
 `THUSLOGIN` will be set to the `-l` flag only in the case when sh is running as
 a login shell. Running thus with the `-l` flag starts *it* as a login shell.
 
 Notice if sh is called from within thus, then it will run *as* thus which makes
-it impossible to open sh as an interactive subshell. This is why the `EXEUNT`
-environment variable is used as a guard in the command list. Defining `EXEUNT`
-will make all subsequent calls to sh as an interactive shell actually open sh,
-not thus.
+it impossible to open sh as an interactive subshell. This is why the `ESCAPE`
+environment variable is used as a guard in the command list. Defining `ESCAPE`
+will make all subsequent calls to sh open sh itself as an interactive shell, not
+thus.
+
+Since aliases take precedent over executables in the path, you could even define
+an alias to sh that runs a script that runs sh after defining `ESCAPE`.
+
+```console
+# ~.sh.sh
+
+#! /usr/bin/env thus
+
+set ESCAPE true
+env sh
+unset ESCAPE
+```
+
+And then the alias goes in the interactive config file for thus.
+
+```console
+# ~.thusrc
+
+alias sh "~.sh.sh"
+```
