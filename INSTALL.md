@@ -21,7 +21,7 @@ similar approach can be used for other shells). We'll need to modify the scripts
 that are executed at login and during an interactive session. For sh, the login
 configuration file is `.profile`.
 
-```console
+```sh
 # ~.profile
 
 ENV=$HOME/.shrc
@@ -33,7 +33,7 @@ THUSLOGIN=-l
 `ENV` is used by sh as the path of the user's configuration file used for
 interactive sessions, in this case, `.shrc`.
 
-```console
+```sh
 # ~.shrc
 
 test -z "$ESCAPE" && echo $- | grep -q i && exec thus $THUSLOGIN
@@ -51,19 +51,19 @@ thus.
 Since aliases take precedent over executables in the path, you could even define
 an alias to sh that runs a script that runs sh after defining `ESCAPE`.
 
-```console
+```sh
 # ~.sh.sh
 
 #! /usr/bin/env thus
 
-set ESCAPE true
+set ESCAPE escape
 env sh
 unset ESCAPE
 ```
 
 And then the alias goes in the interactive config file for thus.
 
-```console
+```sh
 # ~.thusrc
 
 alias sh "~.sh.sh"
