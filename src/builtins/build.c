@@ -37,7 +37,7 @@ int main(void) {
 			errx(EXIT_FAILURE, "Unable to add %s built-in, maximum reached (%d)",
 			     *src, MAXBUILTINS);
 		if (strcmp(*src, "builtin") != 0 && strcmp(*src, "list") != 0)
-			dprintf(listfd, "BUILTIN(%s);\n", *src);
+			dprintf(listfd, "int %s(char **args, size_t numargs);\n", *src);
 		++src;
 	}
 	if (errno) err(EXIT_FAILURE, "Unable to read from current directory");

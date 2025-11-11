@@ -3,8 +3,8 @@
 #include "builtin.h"
 #include "utils.h"
 
-BUILTIN(exeunt) {
-	if (argc != 1) return usage(argv[0], NULL);
+int exeunt(char **args, size_t numargs) {
+	if (numargs != 1) return usage(args[0], NULL);
 
 	deinit();
 	exit(EXIT_SUCCESS);

@@ -3,11 +3,11 @@
 #include "builtin.h"
 #include "utils.h"
 
-BUILTIN(unset) {
-	if (argc != 2) return usage(argv[0], "name");
+int unset(char **args, size_t numargs) {
+	if (numargs != 2) return usage(args[0], "name");
 
-	if (unsetenv(argv[1]) != -1) return EXIT_SUCCESS;
+	if (unsetenv(args[1]) != -1) return EXIT_SUCCESS;
 
-	note("Unable to unset $%s$", argv[1]);
+	note("Unable to unset $%s$", args[1]);
 	return EXIT_FAILURE;
 }

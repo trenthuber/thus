@@ -7,9 +7,11 @@
 #include "input.h"
 #include "utils.h"
 
+char **argvector;
 int login, interactive;
+size_t argcount;
 
-void options(struct context *context) {
+void options(int argc, char **argv, struct context *c) {
 	char *p, *message = "[file | -c string] [arg ...] [-hl]\n"
 	                    "    <file> [arg ...]      Run script\n"
 	                    "    -c <string> [arg ...] Run string\n"
@@ -17,48 +19,51 @@ void options(struct context *context) {
 	                    "    -l                    Run as a login shell";
 	int opt;
 
-	if (arglist[0][0] == '-') {
-		++arglist[0];
+	argvector = argv;
+
+	if (argvector[0][0] == '-') {
+		++argvector[0];
 		login = 1;
 	}
-	if ((p = strrchr(arglist[0], '/'))) arglist[0] = p + 1;
+	if ((p = strrchr(argvector[0], '/'))) argvector[0] = p + 1;
 	interactive = 1;
-	context->input = userinput;
+	c->input = userinput;
 
 	opt = 0;
-	while (opt != 'c' && (opt = getopt(argcount, arglist, ":c:hl")) != -1)
+	argcount = argc;
+	while (opt != 'c' && (opt = getopt(argcount, argvector, ":c:hl")) != -1)
 		switch (opt) {
 		case 'c':
 			interactive = 0;
-			context->string = optarg;
-			context->input = stringinput;
-			arglist[--optind] = arglist[0];
+			c->string = optarg;
+			c->input = stringinput;
+			argvector[--optind] = argvector[0];
 			break;
 		case 'h':
-			usage(arglist[0], message);
+			usage(argvector[0], message);
 			exit(EXIT_SUCCESS);
 		case 'l':
 			login = 1;
 			break;
 		case ':':
 			note("Expected argument following `-%c'\n", optopt);
-			exit(usage(arglist[0], message));
+			exit(usage(argvector[0], message));
 		case '?':
 		default:
 			note("Unknown command line option `-%c'\n", optopt);
-			exit(usage(arglist[0], message));
+			exit(usage(argvector[0], message));
 		}
-	if (!context->string && arglist[optind]) {
+	if (!c->string && argvector[optind]) {
 		interactive = 0;
-		context->script = arglist[optind];
-		context->input = scriptinput;
+		c->script = argvector[optind];
+		c->input = scriptinput;
 
 		/* Until we're able to load the script, errors need to be reported by the
-		 * shell, not the script. */
-		arglist[optind] = arglist[0];
+		 * shell, not the script */
+		argvector[optind] = argvector[0];
 	}
 	if (!interactive) {
 		argcount -= optind;
-		arglist += optind;
+		argvector += optind;
 	}
 }

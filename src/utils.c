@@ -13,15 +13,15 @@
 #include "fg.h"
 #include "history.h"
 #include "input.h"
+#include "options.h"
 #include "signals.h"
 
-int argcount, status;
-char **arglist, *home;
+char *home;
 
 void note(char *fmt, ...) {
 	va_list args;
 
-	fprintf(stderr, "%s: ", arglist[0]);
+	fprintf(stderr, "%s: ", argvector[0]);
 
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
@@ -38,7 +38,7 @@ void note(char *fmt, ...) {
 void fatal(char *fmt, ...) {
 	va_list args;
 
-	fprintf(stderr, "%s: ", arglist[0]);
+	fprintf(stderr, "%s: ", argvector[0]);
 
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
@@ -106,6 +106,64 @@ char *catpath(char *dir, char *filename, char *buffer) {
 	strcpy(buffer, dir);
 	if (!slash) strcat(buffer, "/");
 	strcat(buffer, filename);
+
+	return buffer;
+}
+
+char *quoted(char *token) {
+	char *p, *q, quote;
+	enum {
+		NONE,
+		DOUBLE,
+		SINGLE,
+		ESCAPEDOUBLE,
+	} degree;
+	static char buffer[MAXCHARS + 1];
+
+	if (!*token) return "\"\"";
+
+	degree = NONE;
+	for (p = token; *p; ++p) switch(*p) {
+	case '[':
+		for (q = p; *q; ++q) if (*q == ']') break;
+		if (!*q) continue;
+	case '>':
+	case '<':
+	case '*':
+	case '?':
+	case '#':
+	case '&':
+	case '|':
+	case ';':
+	case ' ':
+		if (degree < DOUBLE) degree = DOUBLE;
+		break;
+	case '$':
+	case '~':
+	case '"':
+		if (degree < SINGLE) degree = SINGLE;
+		break;
+	case '\'':
+		degree |= DOUBLE;
+	}
+	if (degree == NONE) return token;
+
+	quote = degree == SINGLE ? '\'' : '"';
+	p = buffer;
+	*p++ = quote;
+	strcpy(p, token);
+	for (q = p; *q; ++q);
+	if (degree & DOUBLE) for (; *p; ++p) switch (*p)
+	case '$':
+	case '~':
+	case '"':
+		if (degree == ESCAPEDOUBLE) {
+		case '\\':
+			memmove(p + 1, p, ++q - p);
+			*p++ = '\\';
+		}
+	*p++ = quote;
+	*p++ = '\0';
 
 	return buffer;
 }

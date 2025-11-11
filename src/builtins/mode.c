@@ -6,17 +6,17 @@
 #include "context.h"
 #include "run.h"
 
-BUILTIN(mode) {
-	switch (argc) {
+int mode(char **args, size_t numargs) {
+	switch (numargs) {
 	case 1:
 		puts(verbose ? "verbose" : "quiet");
 		break;
 	case 2:
-		if (strcmp(argv[1], "verbose") == 0) verbose = 1;
-		else if (strcmp(argv[1], "quiet") == 0) verbose = 0;
+		if (strcmp(args[1], "verbose") == 0) verbose = 1;
+		else if (strcmp(args[1], "quiet") == 0) verbose = 0;
 		else
 		default:
-			return usage(argv[0], "[verbose | quiet]");
+			return usage(args[0], "[verbose | quiet]");
 	}
 
 	return EXIT_SUCCESS;

@@ -3,14 +3,14 @@
 #include "cbs.c"
 
 int main(int argc, char **argv) {
-	char define[7 + 1 + PATH_MAX + 1], *path;
+	char define[7 + PATH_MAX], *path;
 	size_t l;
 	int slash;
 	pid_t cpid;
 
 	if (argc > 2) errx(EXIT_FAILURE, "usage: %s [prefix]", argv[0]);
 
-	path = stpcpy(define, "-DPATH=\"");
+	path = stpcpy(define, "-DPATH=");
 	if (argc == 2) {
 		l = strlen(argv[1]);
 		slash = argv[1][l - 1] == '/';
@@ -33,9 +33,6 @@ int main(int argc, char **argv) {
 		run("/bin/cp", LIST("cp", "-f", "bin/thus", path), "copy", "bin/thus");
 	await(cpid, "copy", "bin/thus");
 
-	l = strlen(define);
-	define[l] = '\"';
-	define[l + 1] = '\0';
 	cflags = LIST(define, "-Iexternal/cbs");
 	compile("tools/uninstall");
 	load('x', "uninstall", LIST("tools/uninstall"));

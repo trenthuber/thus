@@ -6,29 +6,31 @@
 #include "builtin.h"
 #include "context.h"
 #include "input.h"
+#include "options.h"
 #include "run.h"
 #include "utils.h"
 
-BUILTIN(source) {
-	struct context context;
-	int c;
-	char **v;
+int source(char **args, size_t numargs) {
+	struct context c;
+	char **vector;
+	size_t count;
 	
-	if (argc == 1) return usage(argv[0], "file [args ...]");
+	if (numargs < 2) return usage(args[0], "file [args ...]");
 
-	context = (struct context){0};
-	context.script = argv[1];
-	context.input = scriptinput;
+	c = (struct context){.script = args[1], .input = scriptinput};
 
-	c = argcount;
-	v = arglist;
-	argcount = argc - 1;
-	arglist = argv + 1;
+	/* See comment in `src/options.c' */
+	args[1] = argvector[0];
 
-	while (run(&context));
+	vector = argvector;
+	count = argcount;
+	argvector = args + 1;
+	argcount = numargs - 1;
 
-	argcount = c;
-	arglist = v;
+	while (run(&c));
+
+	argvector = vector;
+	argcount = count;
 
 	return EXIT_SUCCESS;
 }
@@ -48,5 +50,5 @@ void config(char *name) {
 		return;
 	}
 
-	source(2, (char *[]){"source", path, NULL});
+	source((char *[]){"source", path, NULL}, 2);
 }

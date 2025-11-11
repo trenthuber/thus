@@ -1,6 +1,6 @@
 struct builtin {
 	char *name;
-	BUILTIN((*func));
+	int (*func)(char **args, size_t numargs);
 };
 
 extern struct builtin builtins[];

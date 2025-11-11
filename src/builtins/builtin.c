@@ -6,18 +6,13 @@
 #include "list.h"
 #include "utils.h"
 
-int isbuiltin(char **args) {
+int (*getbuiltin(char *name))(char **args, size_t numargs) {
 	struct builtin *builtin;
-	size_t n;
 
 	for (builtin = builtins; builtin->func; ++builtin)
-		if (strcmp(args[0], builtin->name) == 0) {
-			for (n = 1; args[n]; ++n);
-			status = builtin->func(n, args);
-			return 1;
-		}
+		if (strcmp(name, builtin->name) == 0) return builtin->func;
 
-	return 0;
+	return NULL;
 }
 
 int usage(char *program, char *options) {

@@ -7,12 +7,31 @@
 
 #include "alias.h"
 #include "context.h"
+#include "options.h"
+#include "run.h"
 #include "utils.h"
 
+static void sub(struct context *c, char **tokens, size_t numtokens) {
+	memcpy(c->t, tokens, numtokens * sizeof*c->t);
+	c->t += numtokens - 1;
+}
+
+static int subalias(struct context *c) {
+	char **tokens;
+	size_t numtokens;
+
+	if (c->alias || c->t != c->tokens || !(tokens = getalias(c->tokens[0]))) return 0;
+
+	for (numtokens = 0; tokens[numtokens]; ++numtokens);
+	sub(c, tokens, numtokens);
+
+	return 1;
+}
+
 int parse(struct context *c) {
-	int globbing, quote, v, offset, globflags;
-	size_t prevsublen, sublen;
-	char *stlend, *p, *end, *var, term, **sub;
+	char *end, *stlend, *p, *var, term;
+	int quote, globbing, v, offset, globflags;
+	size_t prevnumglobs;
 	long l;
 	static glob_t globs;
 
@@ -23,11 +42,10 @@ int parse(struct context *c) {
 	c->t = c->tokens;
 	c->r = c->redirects;
 	c->r->mode = NONE;
-	c->prev = c->current;
+	c->previous = c->current;
 
 	for (end = c->b; *end; ++end);
-	prevsublen = globbing = quote = 0;
-	sub = NULL;
+	prevnumglobs = globbing = quote = 0;
 	if (globs.gl_pathc) {
 		globfree(&globs);
 		globs.gl_pathc = 0;
@@ -62,7 +80,8 @@ int parse(struct context *c) {
 
 		l = strtol(p + 1, &stlend, 10);
 		errno = 0;
-		if (stlend == c->b - 1) var = l >= 0 && l < argcount ? arglist[l] : c->b - 1;
+		if (stlend == c->b - 1)
+			var = l >= 0 && l < argcount ? argvector[l] : c->b - 1;
 		else if (strcmp(p + 1, "^") == 0) {
 			if (!sprintf(var = (char [12]){0}, "%d", status)) {
 				note("Unable to get previous command status");
@@ -99,12 +118,14 @@ int parse(struct context *c) {
 		}
 
 		*c->b = '\0';
+		subalias(c);
 		++c->t;
 		*c->t = c->b + 1;
 
 		break;
 	case '"':
 		*c->b = '\0';
+		if (quote) subalias(c);
 		if (quote || *c->t != c->b) ++c->t;
 		*c->t = c->b + 1;
 
@@ -115,6 +136,7 @@ int parse(struct context *c) {
 		if (!quote) break;
 		switch (*(c->b + 1)) {
 		case '$':
+		case '~':
 		case '"':
 		case '\\':
 			break;
@@ -169,34 +191,28 @@ int parse(struct context *c) {
 		}
 
 		if (*c->t != c->b) {
-			if (!c->alias && c->t == c->tokens && (sub = getalias(c->tokens[0])))
-				for (sublen = 0; sub[sublen]; ++sublen);
-			else if (globbing) {
+			if (!subalias(c) && globbing) {
 				globflags = GLOB_MARK;
-				if (prevsublen) globflags |= GLOB_APPEND;
+				if (prevnumglobs) globflags |= GLOB_APPEND;
 				switch (glob(*c->t, globflags, NULL, &globs)) {
 				case GLOB_NOMATCH:
-					note("No matches found for %s", *c->t);
+					note("No matches found for `%s'", *c->t);
 					return quit(c);
 				case GLOB_NOSPACE:
 					fatal("Memory allocation");
 				}
-				sublen = globs.gl_pathc - prevsublen;
-				sub = globs.gl_pathv + prevsublen;
-				prevsublen = globs.gl_pathc;
+
 				globbing = 0;
-			}
-			if (sub) {
-				memcpy(c->t, sub, sublen * sizeof*c->t);
-				c->t += sublen - 1;
-				sub = NULL;
+				sub(c, globs.gl_pathv + prevnumglobs, globs.gl_pathc - prevnumglobs);
+				prevnumglobs = globs.gl_pathc;
 			}
 			++c->t;
 		}
 
 		if (term != ' ') {
+			*c->t = NULL;
 			if (c->t != c->tokens) {
-				*c->t = NULL;
+				c->numtokens = c->t - c->tokens;
 				strcpy(c->current.name, c->tokens[0]);
 			} else c->t = NULL;
 			if (c->r == c->redirects) c->r = NULL;
@@ -225,9 +241,5 @@ int parse(struct context *c) {
 		return quit(c);
 	}
 
-	if (c->t == c->tokens) c->t = NULL;
-	if (c->r == c->redirects) c->r = NULL;
-	c->b = NULL;
-
-	return 1;
+	return clear(c);
 }

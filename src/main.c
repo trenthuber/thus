@@ -7,20 +7,18 @@
 #include "utils.h"
 
 int main(int argc, char **argv) {
-	struct context context;
+	struct context c;
 
-	argcount = argc;
-	arglist = argv;
-	context = (struct context){0};
+	c = (struct context){0};
 
-	options(&context);
+	options(argc, argv, &c);
 
 	init();
 
 	if (login) config(".thuslogin");
 	if (interactive) config(".thusrc");
 
-	while (run(&context));
+	while (run(&c));
 
 	deinit();
 

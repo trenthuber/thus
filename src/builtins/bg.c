@@ -112,12 +112,12 @@ void deinitbg(void) {
 	for (p = bgjobs.active; p; p = p->next) killpg(p->job.id, SIGKILL);
 }
 
-BUILTIN(bg) {
+int bg(char **args, size_t numargs) {
 	struct bglink *p;
 	struct bgjob job;
 	long l;
 
-	switch (argc) {
+	switch (numargs) {
 	case 1:
 		for (p = bgjobs.active; p; p = p->next) if (p->job.suspended) {
 			job = p->job;
@@ -130,7 +130,7 @@ BUILTIN(bg) {
 		break;
 	case 2:
 		errno = 0;
-		if ((l = strtol(argv[1], NULL, 10)) == LONG_MAX && errno || l <= 0) {
+		if ((l = strtol(args[1], NULL, 10)) == LONG_MAX && errno || l <= 0) {
 			note("Invalid job id %ld", l);
 			return EXIT_FAILURE;
 		}
@@ -144,7 +144,7 @@ BUILTIN(bg) {
 		}
 		break;
 	default:
-		return usage(argv[0], "[pgid]");
+		return usage(args[0], "[pgid]");
 	}
 
 	if (killpg(job.id, SIGCONT) == -1) {

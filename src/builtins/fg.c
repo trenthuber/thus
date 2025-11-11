@@ -12,6 +12,7 @@
 #include "builtin.h"
 #include "context.h"
 #include "options.h"
+#include "run.h"
 #include "signals.h"
 #include "utils.h"
 
@@ -42,7 +43,7 @@ static void sigchldfghandler(int sig) {
 	errno = e;
 }
 
-static int setconfig(struct termios *mode) {
+int setconfig(struct termios *mode) {
 	if (tcsetattr(STDIN_FILENO, TCSANOW, mode) == -1) {
 		note("Unable to configure TTY");
 		return 0;
@@ -86,7 +87,7 @@ int runfg(pid_t id) {
 
 	/* The handler in `fgaction' is really what reaps the foreground process; the
 	 * `sigsuspend()' just blocks the current thread of execution until the
-	 * foreground process has been reaped. */
+	 * foreground process has been reaped */
 	fgjob.id = id;
 	setsig(SIGCHLD, &fgaction);
 	while (!fgjob.done) {
@@ -113,7 +114,7 @@ int runfg(pid_t id) {
 		status = WSTOPSIG(fgjob.status);
 		job.suspended = 1;
 		if (!pushbg(job)) {
-			note("Unable to suspend current process, too many background jobs\n"
+			note("Unable to suspend current job; too many background jobs\n"
 			     "(Press any key to continue)");
 			getchar();
 			return runfg(id);
@@ -127,12 +128,12 @@ void deinitfg(void) {
 	setconfig(&canonical);
 }
 
-BUILTIN(fg) {
+int fg(char **args, size_t numargs) {
 	struct bgjob job;
 	long l;
 	pid_t id;
 
-	switch (argc) {
+	switch (numargs) {
 	case 1:
 		if (!peekbg(&job)) {
 			note("No job to bring into the foreground");
@@ -142,8 +143,8 @@ BUILTIN(fg) {
 		break;
 	case 2:
 		errno = 0;
-		if ((l = strtol(argv[1], NULL, 10)) == LONG_MAX && errno || l <= 0) {
-			note("Invalid process group id %ld", l);
+		if ((l = strtol(args[1], NULL, 10)) == LONG_MAX && errno || l <= 0) {
+			note("Invalid job id %ld", l);
 			return EXIT_FAILURE;
 		}
 		id = (pid_t)l;
@@ -153,7 +154,7 @@ BUILTIN(fg) {
 		}
 		break;
 	default:
-		return usage(argv[0], "[pgid]");
+		return usage(args[0], "[pgid]");
 	}
 
 	if (!runfg(id)) return EXIT_FAILURE;

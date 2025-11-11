@@ -37,19 +37,20 @@ interactive sessions, in this case, `.shrc`.
 # ~.shrc
 
 test -z "$ESCAPE" && echo $- | grep -q i && exec thus $THUSLOGIN
+unset ESCAPE
+
+alias sh=~/.sh.sh
 ```
 
-`THUSLOGIN` will be set to the `-l` flag only in the case when sh is running as
-a login shell. Running thus with the `-l` flag starts *it* as a login shell.
-
-Notice if sh is called from within thus, then it will run *as* thus which makes
-it impossible to open sh as an interactive subshell. This is why the `ESCAPE`
-environment variable is used as a guard in the command list. Defining `ESCAPE`
-will make all subsequent calls to sh open sh itself as an interactive shell, not
-thus.
-
-Since aliases take precedent over executables in the path, you could even define
-an alias to sh that runs a script that runs sh after defining `ESCAPE`.
+There are two things to note. First, `THUSLOGIN` will be set to the `-l` flag
+only in the case when sh is running as a login shell. Running thus with the `-l`
+flag starts *it* as a login shell. Second, if `ESCAPE` isn't set in the
+environment, then sh will just switch to running thus. This behavior is indeed
+what we want when we're opening an interactive shell for the first time, but
+when we're running sh as a subshell, it ends up running thus instead. This is
+why the `ESCAPE` environment variable exists. Every time we want to run sh from
+inside thus, we first need to set `ESCAPE`. This functionality can be automated
+in a script, say `~.sh.sh`.
 
 ```sh
 # ~.sh.sh
@@ -57,14 +58,18 @@ an alias to sh that runs a script that runs sh after defining `ESCAPE`.
 #! /usr/bin/env thus
 
 set ESCAPE escape
-env sh
-unset ESCAPE
+exec sh
 ```
 
-And then the alias goes in the interactive config file for thus.
+We can add an alias to this script in the interactive configuration file used by
+thus, that is `~.thusrc`. Putting it inside `~.thusrc` ensures that the alias
+only exists when running thus as an interactive session, which is exactly what
+we want. Notice that this alias was also added to the sh interactive
+configuration file earlier. This is to ensure you can still run sh as a subshell
+inside itself.
 
 ```sh
 # ~.thusrc
 
-alias sh "~.sh.sh"
+alias sh ~.sh.sh
 ```

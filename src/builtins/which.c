@@ -7,16 +7,7 @@
 
 #include "alias.h"
 #include "builtin.h"
-#include "list.h"
 #include "utils.h"
-
-enum {
-	ALIAS,
-	BUILTIN,
-	PATH,
-};
-
-static int type;
 
 static int exists(char *path) {
 	struct stat pstat;
@@ -33,23 +24,10 @@ static int exists(char *path) {
 
 char *getpath(char *file) {
 	char *slash, *entry, *end, dir[PATH_MAX];
-	struct builtin *builtin;
 	size_t l;
 	static char path[PATH_MAX];
 
-	type = PATH;
 	if (!(slash = strchr(file, '/'))) {
-		if ((entry = getaliasvalue(file))) {
-			type = ALIAS;
-			return entry;
-		}
-
-		for (builtin = builtins; builtin->func; ++builtin)
-			if (strcmp(file, builtin->name) == 0) {
-				type = BUILTIN;
-				return file;
-			}
-
 		if (!(entry = getenv("PATH"))) {
 			note("Unable to examine $PATH$");
 			return NULL;
@@ -73,19 +51,18 @@ char *getpath(char *file) {
 	return NULL;
 }
 
-BUILTIN(which) {
-	char *result;
+int which(char **args, size_t numargs) {
+	char *p;
 
-	if (argc != 2) return usage(argv[0], "name");
+	if (numargs != 2) return usage(args[0], "name");
 
-	if (!(result = getpath(argv[1]))) {
-		printf("%s not found\n", argv[1]);
-		return EXIT_SUCCESS;
+	if ((p = getaliasvalue(args[1]))) puts(p);
+	else if (getbuiltin(p = args[1])) printf("%s is a built-in\n", p);
+	else if ((p = getpath(args[1]))) puts(quoted(p));
+	else {
+		printf("%s not found\n", quoted(args[1]));
+		return EXIT_FAILURE;
 	}
-	
-	fputs(result, stdout);
-	if (type == BUILTIN) fputs(" is built-in", stdout);
-	putchar('\n');
 
 	return EXIT_SUCCESS;
 }

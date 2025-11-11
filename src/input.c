@@ -10,27 +10,11 @@
 
 #include "context.h"
 #include "history.h"
+#include "options.h"
 #include "signals.h"
 #include "utils.h"
 
 #define OFFSET(x) ((promptlen + (x) - start) % window.ws_col)
-
-enum {
-	CTRLD = '\004',
-	CLEAR = '\014',
-	ESCAPE = '\033',
-
-	/* See `ESCAPE' case in `userinput()' */
-	ALT = '2' + 1,
-
-	UP = 'A',
-	DOWN,
-	RIGHT,
-	LEFT,
-	FORWARD = 'f',
-	BACKWARD = 'b',
-	DEL = '\177',
-};
 
 static struct winsize window;
 static char *start, *cursor, *end;
@@ -94,8 +78,8 @@ int scriptinput(struct context *c) {
 	c->input = stringinput;
 
 	/* We want errors from this point forward to be reported by the script, not the
-	 * shell. */
-	arglist[0] = c->script;
+	 * shell */
+	argvector[0] = c->script;
 
 	return c->input(c);
 }
@@ -138,6 +122,23 @@ static void newline(void) {
 }
 
 int userinput(struct context *c) {
+	enum {
+		CTRLD = '\004',
+		CLEAR = '\014',
+		ESCAPE = '\033',
+
+		/* See `ESCAPE' case */
+		ALT = '2' + 1,
+
+		UP = 'A',
+		DOWN,
+		RIGHT,
+		LEFT,
+		FORWARD = 'f',
+		BACKWARD = 'b',
+		DEL = '\177',
+	};
+
 	int current;
 	char *oldcursor, *oldend;
 

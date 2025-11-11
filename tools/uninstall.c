@@ -2,6 +2,10 @@
 
 #include "cbs.c"
 
+/* C preprocessor being finicky */
+#define STR(x) STRINGIFY(x)
+#define STRINGIFY(x) #x
+
 int main(int argc, char **argv) {
 	pid_t cpid;
 
@@ -9,8 +13,8 @@ int main(int argc, char **argv) {
 
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
 	else if (cpid == 0)
-		run("/bin/rm", LIST("rm", PATH, "uninstall"), "remove", PATH);
-	await(cpid, "remove", PATH);
+		run("/bin/rm", LIST("rm", STR(PATH), "uninstall"), "remove", STR(PATH));
+	await(cpid, "remove", STR(PATH));
 
 	return EXIT_SUCCESS;
 }

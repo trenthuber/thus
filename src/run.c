@@ -10,22 +10,21 @@
 #include "bg.h"
 #include "builtin.h"
 #include "context.h"
+#include "exec.h"
 #include "fg.h"
 #include "parse.h"
 #include "signals.h"
 #include "utils.h"
 #include "which.h"
 
-extern char **environ;
+int verbose, status;
 
-int verbose;
-
-static int closepipe(struct command c) {
+static int closepipe(struct command command) {
 	int result;
 
-	result = close(c.pipe[0]) == 0;
-	result &= close(c.pipe[1]) == 0;
-	if (!result) note("Unable to close `%s' pipe", c.name);
+	result = close(command.pipe[0]) == 0;
+	result &= close(command.pipe[1]) == 0;
+	if (!result) note("Unable to close `%s' pipe", command.name);
 
 	return result;
 }
@@ -55,25 +54,13 @@ static void redirectfiles(struct redirect *r) {
 			r->oldfd = fd;
 		}
 		if (dup2(r->oldfd, r->newfd) == -1)
-			fatal("Unable to redirect %d to %d", r->newfd, r->oldfd);
+			fatal("Unable to redirect file descriptor %d to %d", r->newfd, r->oldfd);
 		if (r->oldname && close(r->oldfd) == -1)
 			fatal("Unable to close `%s'", r->oldname);
 	}
 }
 
-static void exec(char *path, struct context *c) {
-	redirectfiles(c->redirects);
-
-	if (sigprocmask(SIG_SETMASK, &childsigmask, NULL) == -1)
-		note("Unable to unblock TTY signals");
-
-	if (isbuiltin(c->tokens)) exit(status);
-	execve(path, c->tokens, environ);
-	fatal("Couldn't find `%s' command", c->current.name);
-}
-
 int run(struct context *c) {
-	char *p;
 	int islist, ispipe, ispipestart, ispipeend;
 	pid_t cpid, jobid;
 	static pid_t pipeid;
@@ -85,10 +72,8 @@ int run(struct context *c) {
 	if (verbose && (c->t || c->r)) {
 		if (c->t) {
 			for (c->t = c->tokens; *c->t; ++c->t) {
-				for (p = *c->t; *p && *p != ' '; ++p);
-				p = p == *c->t || *p == ' ' ? "'" : "";
 				if (c->t != c->tokens) putchar(' ');
-				printf("%s%s%s", p, *c->t, p);
+				fputs(quoted(*c->t), stdout);
 			}
 			if (c->r) putchar(' ');
 		}
@@ -98,30 +83,39 @@ int run(struct context *c) {
 			if (c->r->oldname) printf("%s", c->r->oldname);
 			else printf("&%d", c->r->oldfd);
 		}
-		if (c->current.term == BG) putchar('&');
-		fputs(c->current.term == PIPE ? " | " : "\n", stdout);
+		switch (c->current.term) {
+		case PIPE:
+			fputs(" | ", stdout);
+			fflush(stdout);
+			break;
+		case BG:
+			putchar('&');
+		default:
+			putchar('\n');
+		}	
 	}
 
-	islist = c->prev.term > BG || c->current.term > BG;
+	islist = c->previous.term > BG || c->current.term > BG;
 	if (c->t) {
 		if (c->current.term == BG && bgfull()) {
-			note("Unable to place job in background, too many background jobs");
+			note("Unable to place job in background; too many background jobs");
 			return quit(c);
 		}
-		if (!(p = getpath(c->current.name))) {
+		if (!(c->current.builtin = getbuiltin(c->current.name))
+		    && !(c->current.path = getpath(c->current.name))) {
 			note("Couldn't find `%s' command", c->current.name);
-			if (c->prev.term == PIPE) killpg(pipeid, SIGKILL);
+			if (c->previous.term == PIPE) killpg(pipeid, SIGKILL);
 			return quit(c);
 		}
 
-		ispipe = c->prev.term == PIPE || c->current.term == PIPE;
-		ispipestart = ispipe && c->prev.term != PIPE;
+		ispipe = c->previous.term == PIPE || c->current.term == PIPE;
+		ispipestart = ispipe && c->previous.term != PIPE;
 		ispipeend = ispipe && c->current.term != PIPE;
 
 		if (ispipe) {
 			if (!ispipeend && pipe(c->current.pipe) == -1) {
 				note("Unable to create pipe");
-				if (!ispipestart) closepipe(c->prev);
+				if (!ispipestart) closepipe(c->previous);
 				return quit(c);
 			}
 			if ((cpid = fork()) == -1) {
@@ -129,28 +123,34 @@ int run(struct context *c) {
 				return quit(c);
 			} else if (cpid == 0) {
 				if (!ispipestart) {
-					if (dup2(c->prev.pipe[0], 0) == -1)
-						fatal("Unable to duplicate read end of `%s' pipe", c->prev.name);
-					if (!closepipe(c->prev)) exit(EXIT_FAILURE);
+					if (dup2(c->previous.pipe[0], 0) == -1)
+						fatal("Unable to duplicate read end of `%s' pipe", c->previous.name);
+					if (!closepipe(c->previous)) exit(EXIT_FAILURE);
 				}
 				if (!ispipeend) {
 					if (dup2(c->current.pipe[1], 1) == -1)
 						fatal("Unable to duplicate write end of `%s' pipe", c->current.name);
 					if (!closepipe(c->current)) exit(EXIT_FAILURE);
 				}
-				exec(p, c);
+				redirectfiles(c->redirects);
+				execute(c);
 			}
 			if (ispipestart) pipeid = cpid;
-			else if (!closepipe(c->prev)) {
+			else if (!closepipe(c->previous)) {
 				killpg(pipeid, SIGKILL);
 				return quit(c);
 			}
 			jobid = pipeid;
-		} else if (!c->r && isbuiltin(c->tokens)) cpid = 0;
-		else if ((jobid = cpid = fork()) == -1) {
+		} else if (!c->r && (c->current.builtin = getbuiltin(c->current.name))) {
+			status = c->current.builtin(c->tokens, c->numtokens);
+			cpid = 0;
+		} else if ((jobid = cpid = fork()) == -1) {
 			note("Unable to fork child process");
 			return quit(c);
-		} else if (cpid == 0) exec(p, c);
+		} else if (cpid == 0) {
+			redirectfiles(c->redirects);
+			execute(c);
+		}
 
 		if (cpid) {
 			if (setpgid(cpid, jobid) == -1) {
@@ -174,7 +174,7 @@ int run(struct context *c) {
 		} else if (c->current.term == OR) return clear(c);
 	} else {
 		if (islist) {
-			if (c->prev.term == PIPE) {
+			if (c->previous.term == PIPE) {
 				killpg(pipeid, SIGKILL);
 				if (verbose) putchar('\n');
 			}

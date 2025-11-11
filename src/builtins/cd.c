@@ -6,17 +6,17 @@
 #include "builtin.h"
 #include "utils.h"
 
-BUILTIN(cd) {
+int cd(char **args, size_t numargs) {
 	char *path, buffer[PATH_MAX + 1];
 	size_t l;
 
-	switch (argc) {
+	switch (numargs) {
 	case 1:
 		path = home;
 		break;
 	case 2:
-		if (!(path = realpath(argv[1], buffer))) {
-			note(argv[1]);
+		if (!(path = realpath(args[1], buffer))) {
+			note(args[1]);
 			return EXIT_FAILURE;
 		}
 		l = strlen(buffer);
@@ -24,7 +24,7 @@ BUILTIN(cd) {
 		buffer[l] = '/';
 		break;
 	default:
-		return usage(argv[0], "[directory]");
+		return usage(args[0], "[directory]");
 	}
 
 	if (chdir(path) == -1) {

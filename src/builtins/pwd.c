@@ -7,11 +7,11 @@
 #include "builtin.h"
 #include "utils.h"
 
-BUILTIN(pwd) {
+int pwd(char **args, size_t numargs) {
 	char *cwd, buffer[PATH_MAX];
 	size_t l;
 
-	if (argc != 1) return usage(argv[0], NULL);
+	if (numargs != 1) return usage(args[0], NULL);
 
 	if (!(cwd = getenv("PWD"))) {
 		if (!(cwd = getcwd(buffer, PATH_MAX))) {
