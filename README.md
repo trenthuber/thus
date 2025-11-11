@@ -52,9 +52,9 @@ where it takes a subtly different approach.
 Like most other shells, variables, tildes, and escape sequences will be expanded
 inside of double quotes, but not single quotes. *Unlike* other shells however,
 quotes do not concatenate with other arguments that are not separated from the
-quote by whitespace. For example, the command `echo "abc"def` would print
-`abc def` whereas other shells would combine them into a single argument and
-print `abcdef`.
+quote by whitespace. For example, the command `echo "foo"bar` would print
+`foo bar` whereas other shells would combine them into a single argument and
+print `foobar`.
 
 ### Variables and aliases
 
