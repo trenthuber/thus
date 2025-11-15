@@ -56,8 +56,8 @@ int which(char **args, size_t numargs) {
 
 	if (numargs != 2) return usage(args[0], "name");
 
-	if ((p = getaliasvalue(args[1]))) puts(p);
-	else if (getbuiltin(p = args[1])) printf("%s is a built-in\n", p);
+	if ((p = getalias(args[1]))) puts(p);
+	else if (getbuiltin(p = args[1])) printf("%s is built-in\n", p);
 	else if ((p = getpath(args[1]))) puts(quoted(p));
 	else {
 		printf("%s not found\n", quoted(args[1]));

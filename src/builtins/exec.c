@@ -40,5 +40,5 @@ int exec(char **args, size_t numargs) {
 
 	/* execute() is guaranteed not to return, this statement just appeases the
 	 * compiler */
-	return EXIT_SUCCESS;
+	exit(EXIT_SUCCESS);
 }

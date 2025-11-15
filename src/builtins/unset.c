@@ -8,6 +8,6 @@ int unset(char **args, size_t numargs) {
 
 	if (unsetenv(args[1]) != -1) return EXIT_SUCCESS;
 
-	note("Unable to unset $%s$", args[1]);
+	note("Unable to unset `%s'", args[1]);
 	return EXIT_FAILURE;
 }

@@ -79,8 +79,10 @@ int run(struct context *c) {
 		}
 		if (c->r) for (c->r = c->redirects; c->r->mode; ++c->r) {
 			if (c->r != c->redirects) putchar(' ');
-			printf("%d%.*s", c->r->newfd, (c->r->mode & 1) + 1, &"<>>"[c->r->mode & 2]);
-			if (c->r->oldname) printf("%s", c->r->oldname);
+			if (c->r->newfd != c->r->mode >= WRITE) printf("%d", c->r->newfd);
+			putchar(c->r->mode < WRITE ? READ : WRITE);
+			if (c->r->mode == READWRITE || c->r->mode == APPEND) putchar(WRITE);
+			if (c->r->oldname) fputs(c->r->oldname, stdout);
 			else printf("&%d", c->r->oldfd);
 		}
 		switch (c->current.term) {
@@ -96,83 +98,8 @@ int run(struct context *c) {
 	}
 
 	islist = c->previous.term > BG || c->current.term > BG;
-	if (c->t) {
-		if (c->current.term == BG && bgfull()) {
-			note("Unable to place job in background; too many background jobs");
-			return quit(c);
-		}
-		if (!(c->current.builtin = getbuiltin(c->current.name))
-		    && !(c->current.path = getpath(c->current.name))) {
-			note("Couldn't find `%s' command", c->current.name);
-			if (c->previous.term == PIPE) killpg(pipeid, SIGKILL);
-			return quit(c);
-		}
 
-		ispipe = c->previous.term == PIPE || c->current.term == PIPE;
-		ispipestart = ispipe && c->previous.term != PIPE;
-		ispipeend = ispipe && c->current.term != PIPE;
-
-		if (ispipe) {
-			if (!ispipeend && pipe(c->current.pipe) == -1) {
-				note("Unable to create pipe");
-				if (!ispipestart) closepipe(c->previous);
-				return quit(c);
-			}
-			if ((cpid = fork()) == -1) {
-				note("Unable to fork child process");
-				return quit(c);
-			} else if (cpid == 0) {
-				if (!ispipestart) {
-					if (dup2(c->previous.pipe[0], 0) == -1)
-						fatal("Unable to duplicate read end of `%s' pipe", c->previous.name);
-					if (!closepipe(c->previous)) exit(EXIT_FAILURE);
-				}
-				if (!ispipeend) {
-					if (dup2(c->current.pipe[1], 1) == -1)
-						fatal("Unable to duplicate write end of `%s' pipe", c->current.name);
-					if (!closepipe(c->current)) exit(EXIT_FAILURE);
-				}
-				redirectfiles(c->redirects);
-				execute(c);
-			}
-			if (ispipestart) pipeid = cpid;
-			else if (!closepipe(c->previous)) {
-				killpg(pipeid, SIGKILL);
-				return quit(c);
-			}
-			jobid = pipeid;
-		} else if (!c->r && (c->current.builtin = getbuiltin(c->current.name))) {
-			status = c->current.builtin(c->tokens, c->numtokens);
-			cpid = 0;
-		} else if ((jobid = cpid = fork()) == -1) {
-			note("Unable to fork child process");
-			return quit(c);
-		} else if (cpid == 0) {
-			redirectfiles(c->redirects);
-			execute(c);
-		}
-
-		if (cpid) {
-			if (setpgid(cpid, jobid) == -1) {
-				if (errno != ESRCH) {
-					note("Unable to set pgid of `%s' command to %d", c->current.name, jobid);
-					if (kill(cpid, SIGKILL) == -1)
-						note("Unable to kill process %d; may need to manually terminate", cpid);
-				}
-				return quit(c);
-			}
-			if (ispipestart || c->current.term == BG) {
-				pushbgid(jobid);
-				return 1;
-			}
-			if (c->current.term != PIPE && !runfg(jobid)) return quit(c);
-		}
-
-		if (status != EXIT_SUCCESS) {
-			if (!islist) return quit(c);
-			if (c->current.term == AND) return clear(c);
-		} else if (c->current.term == OR) return clear(c);
-	} else {
+	if (!c->t) {
 		if (islist) {
 			if (c->previous.term == PIPE) {
 				killpg(pipeid, SIGKILL);
@@ -186,13 +113,93 @@ int run(struct context *c) {
 		if ((cpid = fork()) == -1) {
 			note("Unable to fork child process");
 			return quit(c);
-		} else if (cpid == 0) {
+		}
+		if (!cpid) {
 			redirectfiles(c->redirects);
 			exit(EXIT_SUCCESS);
 		}
 		waitpid(cpid, NULL, 0);
 		errno = 0;
+
+		return 1;
 	}
+
+	if (c->current.term == BG && bgfull()) {
+		note("Unable to place job in background; too many background jobs");
+		return quit(c);
+	}
+	if (!(c->current.builtin = getbuiltin(c->current.name))
+	    && !(c->current.path = getpath(c->current.name))) {
+		note("Couldn't find `%s' command", c->current.name);
+		if (c->previous.term == PIPE) killpg(pipeid, SIGKILL);
+		return quit(c);
+	}
+
+	ispipe = c->previous.term == PIPE || c->current.term == PIPE;
+	ispipestart = ispipe && c->previous.term != PIPE;
+	ispipeend = ispipe && c->current.term != PIPE;
+
+	if (ispipe) {
+		if (!ispipeend && pipe(c->current.pipe) == -1) {
+			note("Unable to create pipe");
+			if (!ispipestart) closepipe(c->previous);
+			return quit(c);
+		}
+		if ((cpid = fork()) == -1) {
+			note("Unable to fork child process");
+			return quit(c);
+		}
+		if (!cpid) {
+			if (!ispipestart) {
+				if (dup2(c->previous.pipe[0], 0) == -1)
+					fatal("Unable to duplicate read end of `%s' pipe", c->previous.name);
+				if (!closepipe(c->previous)) exit(EXIT_FAILURE);
+			}
+			if (!ispipeend) {
+				if (dup2(c->current.pipe[1], 1) == -1)
+					fatal("Unable to duplicate write end of `%s' pipe", c->current.name);
+				if (!closepipe(c->current)) exit(EXIT_FAILURE);
+			}
+			redirectfiles(c->redirects);
+			execute(c);
+		}
+		if (ispipestart) pipeid = cpid;
+		else if (!closepipe(c->previous)) {
+			killpg(pipeid, SIGKILL);
+			return quit(c);
+		}
+		jobid = pipeid;
+	} else if (!c->r && (c->current.builtin = getbuiltin(c->current.name))) {
+		status = c->current.builtin(c->tokens, c->numtokens);
+		cpid = 0;
+	} else if ((jobid = cpid = fork()) == -1) {
+		note("Unable to fork child process");
+		return quit(c);
+	} else if (!cpid) {
+		redirectfiles(c->redirects);
+		execute(c);
+	}
+
+	if (cpid) {
+		if (setpgid(cpid, jobid) == -1) {
+			if (errno != ESRCH) {
+				note("Unable to set pgid of `%s' command to %d", c->current.name, jobid);
+				if (kill(cpid, SIGKILL) == -1)
+					note("Unable to kill process %d; may need to manually terminate", cpid);
+			}
+			return quit(c);
+		}
+		if (ispipestart || c->current.term == BG) {
+			pushbgid(jobid);
+			return 1;
+		}
+		if (c->current.term != PIPE && !runfg(jobid)) return quit(c);
+	}
+
+	if (status != EXIT_SUCCESS) {
+		if (!islist) return quit(c);
+		if (c->current.term == AND) return clear(c);
+	} else if (c->current.term == OR) return clear(c);
 
 	return 1;
 }

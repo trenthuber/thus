@@ -12,13 +12,11 @@
 
 #define MAXBG 100
 
-struct bglink {
-	struct bgjob job;
-	struct bglink *next;
-};
-
 static struct {
-	struct bglink entries[MAXBG], *active, *free;
+	struct bglink {
+		struct bgjob job;
+		struct bglink *next;
+	} entries[MAXBG], *active, *free;
 } bgjobs;
 struct sigaction bgaction;
 

@@ -34,7 +34,7 @@ int main(void) {
 			err(EXIT_FAILURE, "Unable to duplicate directory entry");
 		(*src)[strlen(*src) - 2] = '\0';
 		if (src - srcs == 2 + MAXBUILTINS + 1)
-			errx(EXIT_FAILURE, "Unable to add %s built-in, maximum reached (%d)",
+			errx(EXIT_FAILURE, "Unable to add `%s' built-in, maximum reached (%d)",
 			     *src, MAXBUILTINS);
 		if (strcmp(*src, "builtin") != 0 && strcmp(*src, "list") != 0)
 			dprintf(listfd, "int %s(char **args, size_t numargs);\n", *src);

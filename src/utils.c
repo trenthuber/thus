@@ -22,16 +22,13 @@ void note(char *fmt, ...) {
 	va_list args;
 
 	fprintf(stderr, "%s: ", argvector[0]);
-
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
 	va_end(args);
-
 	if (errno) {
 		fprintf(stderr, ": %s", strerror(errno));
 		errno = 0;
 	}
-
 	putchar('\n');
 }
 
@@ -39,13 +36,10 @@ void fatal(char *fmt, ...) {
 	va_list args;
 
 	fprintf(stderr, "%s: ", argvector[0]);
-
 	va_start(args, fmt);
 	vfprintf(stderr, fmt, args);
 	va_end(args);
-
 	if (errno) fprintf(stderr, ": %s", strerror(errno));
-
 	putchar('\n');
 
 	exit(errno);
@@ -144,7 +138,7 @@ char *quoted(char *token) {
 		if (degree < SINGLE) degree = SINGLE;
 		break;
 	case '\'':
-		degree |= DOUBLE;
+		if (degree == NONE || degree == SINGLE) ++degree;
 	}
 	if (degree == NONE) return token;
 
@@ -153,7 +147,7 @@ char *quoted(char *token) {
 	*p++ = quote;
 	strcpy(p, token);
 	for (q = p; *q; ++q);
-	if (degree & DOUBLE) for (; *p; ++p) switch (*p)
+	if (degree != SINGLE) for (; *p; ++p) switch (*p)
 	case '$':
 	case '~':
 	case '"':
@@ -162,8 +156,8 @@ char *quoted(char *token) {
 			memmove(p + 1, p, ++q - p);
 			*p++ = '\\';
 		}
-	*p++ = quote;
-	*p++ = '\0';
+	*q++ = quote;
+	*q++ = '\0';
 
 	return buffer;
 }

@@ -25,19 +25,18 @@ static size_t getindex(char *name) {
 	return i;
 }
 
-char *getaliasvalue(char *name) {
+char *getalias(char *name) {
 	size_t i;
 
 	if ((i = getindex(name)) == aliases.size) return NULL;
 	return aliases.entries[i].value;
 }
 
-char **getalias(char *name) {
-	char *value;
+char **parsealias(char *value) {
 	size_t l;
 	static struct context c;
 
-	if (!(value = getaliasvalue(name))) return NULL;
+	if (!value) return NULL;
 
 	strcpy(c.buffer, value);
 	l = strlen(value);
@@ -72,14 +71,16 @@ int alias(char **args, size_t numargs) {
 	switch (numargs) {
 	case 1:
 		for (i = 0; i < aliases.size; ++i)
-			printf("%s -> %s\n", quoted(aliases.entries[i].name),
+			printf("%s = %s\n", quoted(aliases.entries[i].name),
 			       aliases.entries[i].value);
 		break;
 	case 3:
 		if (aliases.size == MAXALIAS) {
-			note("Unable to add alias, maximum reached (%d)", MAXALIAS);
+			note("Unable to add `%s' alias, maximum reached (%d)", args[1], MAXALIAS);
 			return EXIT_FAILURE;
 		}
+		if (!parsealias(args[2])) return EXIT_FAILURE;
+
 		for (i = 1; i <= 2; ++i) {
 			end = args[i] + strlen(args[i]);
 			while (*args[i] == ' ') ++args[i];

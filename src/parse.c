@@ -16,16 +16,16 @@ static void sub(struct context *c, char **tokens, size_t numtokens) {
 	c->t += numtokens - 1;
 }
 
-static int subalias(struct context *c) {
+static void subalias(struct context *c) {
 	char **tokens;
 	size_t numtokens;
 
-	if (c->alias || c->t != c->tokens || !(tokens = getalias(c->tokens[0]))) return 0;
+	if (c->alias || c->t != c->tokens
+	    || !(tokens = parsealias(getalias(c->tokens[0]))))
+		return;
 
 	for (numtokens = 0; tokens[numtokens]; ++numtokens);
 	sub(c, tokens, numtokens);
-
-	return 1;
 }
 
 int parse(struct context *c) {
@@ -82,12 +82,8 @@ int parse(struct context *c) {
 		errno = 0;
 		if (stlend == c->b - 1)
 			var = l >= 0 && l < argcount ? argvector[l] : c->b - 1;
-		else if (strcmp(p + 1, "^") == 0) {
-			if (!sprintf(var = (char [12]){0}, "%d", status)) {
-				note("Unable to get previous command status");
-				return quit(c);
-			}
-		} else if (!(var = getenv(p + 1))) var = "";
+		else if (strcmp(p + 1, "^") == 0) sprintf(var = (char [12]){0}, "%d", status);
+		else if (!(var = getenv(p + 1))) var = c->b - 1;
 
 		v = strlen(var);
 		offset = v - (c->b - p);
@@ -110,13 +106,11 @@ int parse(struct context *c) {
 		*c->b = '\0';
 		if (*c->t != c->b) ++c->t;
 		*c->t = ++c->b;
-
 		while (*c->b && *c->b != '\'') ++c->b;
 		if (!*c->b) {
 			note("Quote left open-ended");
 			return quit(c);
 		}
-
 		*c->b = '\0';
 		subalias(c);
 		++c->t;
@@ -124,12 +118,12 @@ int parse(struct context *c) {
 
 		break;
 	case '"':
-		*c->b = '\0';
-		if (quote) subalias(c);
-		if (quote || *c->t != c->b) ++c->t;
-		*c->t = c->b + 1;
-
 		quote = !quote;
+
+		*c->b = '\0';
+		if (!quote) subalias(c);
+		if (!quote || *c->t != c->b) ++c->t;
+		*c->t = c->b + 1;
 
 		break;
 	case '\\':
@@ -166,6 +160,7 @@ int parse(struct context *c) {
 	case ';':
 	case ' ':
 		if (quote) break;
+
 		if (*c->b == '#') *(c->b + 1) = '\0';
 
 		term = *c->b;
@@ -190,50 +185,53 @@ int parse(struct context *c) {
 			c->r->mode = NONE;
 		}
 
-		if (*c->t != c->b) {
-			if (!subalias(c) && globbing) {
-				globflags = GLOB_MARK;
-				if (prevnumglobs) globflags |= GLOB_APPEND;
-				switch (glob(*c->t, globflags, NULL, &globs)) {
-				case GLOB_NOMATCH:
-					note("No matches found for `%s'", *c->t);
-					return quit(c);
-				case GLOB_NOSPACE:
-					fatal("Memory allocation");
-				}
-
-				globbing = 0;
-				sub(c, globs.gl_pathv + prevnumglobs, globs.gl_pathc - prevnumglobs);
-				prevnumglobs = globs.gl_pathc;
+		if (globbing) {
+			globflags = GLOB_MARK;
+			if (prevnumglobs) globflags |= GLOB_APPEND;
+			switch (glob(*c->t, globflags, NULL, &globs)) {
+			case GLOB_NOMATCH:
+				note("No matches found for `%s'", *c->t);
+				return quit(c);
+			case GLOB_NOSPACE:
+				fatal("Memory allocation");
 			}
+
+			globbing = 0;
+			sub(c, globs.gl_pathv + prevnumglobs, globs.gl_pathc - prevnumglobs);
+			prevnumglobs = globs.gl_pathc;
+		}
+
+		if (*c->t != c->b) {
+			subalias(c);
 			++c->t;
 		}
 
-		if (term != ' ') {
-			*c->t = NULL;
-			if (c->t != c->tokens) {
-				c->numtokens = c->t - c->tokens;
-				strcpy(c->current.name, c->tokens[0]);
-			} else c->t = NULL;
-			if (c->r == c->redirects) c->r = NULL;
-			switch (term) {
-			case '&':
-			case '|':
-				c->current.term = term;
-				if (*(c->b + 1) == term) {
-					++c->current.term;
-					*++c->b = '\0';
-				}
-				break;
-			case ';':
-				c->current.term = SEMI;
-			}
-			++c->b;
-
-			return 1;
+		if (term == ' ') {
+			*c->t = c->b + 1;
+			break;
 		}
 
-		*c->t = c->b + 1;
+		*c->t = NULL;
+		if (c->t != c->tokens) {
+			c->numtokens = c->t - c->tokens;
+			strcpy(c->current.name, c->tokens[0]);
+		} else c->t = NULL;
+		if (c->r == c->redirects) c->r = NULL;
+		switch (term) {
+		case '&':
+		case '|':
+			c->current.term = term;
+			if (*(c->b + 1) == term) {
+				++c->current.term;
+				*++c->b = '\0';
+			}
+			break;
+		case ';':
+			c->current.term = SEMI;
+		}
+		++c->b;
+
+		return 1;
 	}
 
 	if (quote) {

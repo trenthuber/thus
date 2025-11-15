@@ -39,6 +39,12 @@ void initsignals(void) {
 	sigaddset(&shellsigmask, SIGTSTP);
 	sigaddset(&shellsigmask, SIGTTIN);
 	sigaddset(&shellsigmask, SIGTTOU);
+	if (sigprocmask(SIG_BLOCK, &shellsigmask, &childsigmask) == -1) exit(errno);
+
+	defaultaction = (struct sigaction){.sa_handler = SIG_DFL};
+	setsig(SIGTSTP, &defaultaction);
+	setsig(SIGTTOU, &defaultaction);
+	setsig(SIGTTIN, &defaultaction);
 
 	action = (struct sigaction){.sa_handler = sigwinchhandler};
 	setsig(SIGWINCH, &action);
@@ -50,11 +56,4 @@ void initsignals(void) {
 
 	action = (struct sigaction){.sa_handler = siginthandler};
 	setsig(SIGINT, &action);
-
-	defaultaction = (struct sigaction){.sa_handler = SIG_DFL};
-	setsig(SIGTSTP, &defaultaction);
-	setsig(SIGTTOU, &defaultaction);
-	setsig(SIGTTIN, &defaultaction);
-
-	if (sigprocmask(SIG_BLOCK, &shellsigmask, &childsigmask) == -1) exit(errno);
 }

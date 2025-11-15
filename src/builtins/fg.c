@@ -60,10 +60,9 @@ void initfg(void) {
 	pgid = getpgrp();
 	if (login && pid != pgid && setpgid(0, pgid = pid) == -1) exit(errno);
 
-	if (tcsetpgrp(STDIN_FILENO, pgid) == -1)
+	if (tcsetpgrp(STDIN_FILENO, pgid) == -1
+	    || tcgetattr(STDIN_FILENO, &canonical) == -1)
 		exit(errno);
-
-	if (tcgetattr(STDIN_FILENO, &canonical) == -1) exit(errno);
 	raw = canonical;
 	raw.c_lflag &= ~(ICANON | ECHO);
 	if (!setconfig(&raw)) exit(EXIT_FAILURE);

@@ -20,17 +20,16 @@ void options(int argc, char **argv, struct context *c) {
 	int opt;
 
 	argvector = argv;
-
 	if (argvector[0][0] == '-') {
 		++argvector[0];
 		login = 1;
 	}
 	if ((p = strrchr(argvector[0], '/'))) argvector[0] = p + 1;
-	interactive = 1;
-	c->input = userinput;
 
 	opt = 0;
 	argcount = argc;
+	interactive = 1;
+	c->input = userinput;
 	while (opt != 'c' && (opt = getopt(argcount, argvector, ":c:hl")) != -1)
 		switch (opt) {
 		case 'c':
