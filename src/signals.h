@@ -1,4 +1,4 @@
-extern int sigquit, sigint, sigwinch;
+extern int sigwinch, sigquit, sigint;
 extern sigset_t shellsigmask, childsigmask;
 extern struct sigaction defaultaction;
 

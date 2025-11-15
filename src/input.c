@@ -14,16 +14,11 @@
 #include "signals.h"
 #include "utils.h"
 
-#define OFFSET(x) ((promptlen + (x) - start) % window.ws_col)
+#define OFFSET(x) ((promptlen + x - start) % window.ws_col)
 
+static char *end, *cursor, *start;
 static struct winsize window;
-static char *start, *cursor, *end;
 static size_t promptlen;
-
-void getcolumns(void) {
-	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &window) == -1 && window.ws_col == 0)
-		window.ws_col = 80;
-}
 
 int stringinput(struct context *c) {
 	size_t l;
@@ -121,15 +116,17 @@ static void newline(void) {
 	putchar('\r');
 }
 
+void getcolumns(void) {
+	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &window) == -1 && window.ws_col == 0)
+		window.ws_col = 80;
+}
+
 int userinput(struct context *c) {
 	enum {
 		CTRLD = '\004',
 		CLEAR = '\014',
 		ESCAPE = '\033',
-
-		/* See `ESCAPE' case */
 		ALT = '2' + 1,
-
 		UP = 'A',
 		DOWN,
 		RIGHT,
@@ -161,6 +158,10 @@ int userinput(struct context *c) {
 				}
 				break;
 			case EOF:
+				if (sigwinch) {
+					sigwinch = 0;
+					getcolumns();
+				}
 				if (sigquit) {
 				case CTRLD:
 					newline();
@@ -168,28 +169,24 @@ int userinput(struct context *c) {
 				}
 				if (sigint) {
 					sigint = 0;
-
-					newline();
-					prompt();
-
 					end = cursor = start;
 					*start = '\0';
 
 					addhistory(NULL);
-				}
-				if (sigwinch) {
-					sigwinch = 0;
 
-					getcolumns();
+					newline();
+					prompt();
 				}
 				break;
 			case CLEAR:
-				fputs("\033[H\033[J", stdout);
-				prompt();
 				oldcursor = cursor;
 				cursor = start;
+
+				fputs("\033[H\033[J", stdout);
+				prompt();
 				while (cursor != end) moveright();
 				while (cursor != oldcursor) moveleft();
+
 				break;
 
 				/* This is a very minimal way to handle arrow keys. All modifiers except for
@@ -213,17 +210,15 @@ int userinput(struct context *c) {
 					switch (current) {
 					case UP:
 					case DOWN:
-						oldend = end;
+						if (!gethistory(current == UP, c->buffer)) break;
 
 						oldcursor = cursor;
-						if (!gethistory(current == UP, c->buffer)) break;
+						oldend = end;
 						end = cursor = start + strlen(start);
 						while (cursor < oldend) *cursor++ = ' ';
 						cursor = oldcursor;
 
 						while (cursor != start) moveleft();
-						putchar('\r');
-						prompt();
 						while (cursor < end || cursor < oldend) moveright();
 						while (cursor != end) moveleft();
 

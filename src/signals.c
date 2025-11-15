@@ -5,13 +5,19 @@
 
 #include "utils.h"
 
-int sigquit, sigint, sigwinch;
+int sigwinch, sigquit, sigint;
 sigset_t shellsigmask, childsigmask;
 struct sigaction defaultaction;
 
 void setsig(int sig, struct sigaction *act) {
 	if (sigaction(sig, act, NULL) == -1)
 		fatal("Unable to install %s handler", strsignal(sig));
+}
+
+static void sigwinchhandler(int sig) {
+	(void)sig;
+
+	sigwinch = 1;
 }
 
 static void sigquithandler(int sig) {
@@ -26,12 +32,6 @@ static void siginthandler(int sig) {
 	sigint = 1;
 }
 
-static void sigwinchhandler(int sig) {
-	(void)sig;
-
-	sigwinch = 1;
-}
-
 void initsignals(void) {
 	struct sigaction action;
 
@@ -40,6 +40,9 @@ void initsignals(void) {
 	sigaddset(&shellsigmask, SIGTTIN);
 	sigaddset(&shellsigmask, SIGTTOU);
 
+	action = (struct sigaction){.sa_handler = sigwinchhandler};
+	setsig(SIGWINCH, &action);
+
 	action = (struct sigaction){.sa_handler = sigquithandler};
 	setsig(SIGHUP, &action);
 	setsig(SIGQUIT, &action);
@@ -47,9 +50,6 @@ void initsignals(void) {
 
 	action = (struct sigaction){.sa_handler = siginthandler};
 	setsig(SIGINT, &action);
-
-	action = (struct sigaction){.sa_handler = sigwinchhandler};
-	setsig(SIGWINCH, &action);
 
 	defaultaction = (struct sigaction){.sa_handler = SIG_DFL};
 	setsig(SIGTSTP, &defaultaction);
