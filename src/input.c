@@ -143,120 +143,120 @@ int userinput(struct context *c) {
 	end = cursor = start = c->buffer;
 	while (start == end) {
 		prompt();
-		while ((current = getchar()) != '\n') {
-			switch (current) {
-			default:
-				if (current >= ' ' && current <= '~') {
-					if (end - start == MAXCHARS) break;
-					memmove(cursor + 1, cursor, end - cursor);
-					*cursor = current;
-					*++end = '\0';
+		while ((current = getchar()) != '\n') switch (current) {
+		default:
+			if (current >= ' ' && current <= '~') {
+				if (end - start == MAXCHARS) break;
+				memmove(cursor + 1, cursor, end - cursor);
+				*cursor = current;
+				*++end = '\0';
 
-					oldcursor = cursor + 1;
-					while (cursor != end) moveright();
-					while (cursor != oldcursor) moveleft();
-				}
-				break;
-			case EOF:
-				if (sigwinch) {
-					sigwinch = 0;
-					getcolumns();
-				}
-				if (sigquit) {
-				case CTRLD:
-					newline();
-					return 0;
-				}
-				if (sigint) {
-					sigint = 0;
-					end = cursor = start;
-					*start = '\0';
-
-					addhistory(NULL);
-
-					newline();
-					prompt();
-				}
-				break;
-			case CLEAR:
-				oldcursor = cursor;
-				cursor = start;
-
-				fputs("\033[H\033[J", stdout);
-				prompt();
+				oldcursor = cursor + 1;
 				while (cursor != end) moveright();
 				while (cursor != oldcursor) moveleft();
+			}
+			break;
+		case EOF:
+			if (sigwinch) {
+				sigwinch = 0;
 
-				break;
+				getcolumns();
+			}
+			if (sigquit) {
+			case CTRLD:
+				newline();
+				return 0;
+			}
+			if (sigint) {
+				sigint = 0;
 
-				/* This is a very minimal way to handle arrow keys. All modifiers except for
-				 * the ALT key are processed but ignored.
-				 *
-				 * See "Terminal Input Sequences" reference in `README.md'. */
-			case ESCAPE:
-				if ((current = getchar()) == '[') {
-					while ((current = getchar()) >= '0' && current <= '9');
-					if (current == ';') {
-						if ((current = getchar()) == ALT) switch ((current = getchar())) {
-						case LEFT:
-							current = BACKWARD;
-							break;
-						case RIGHT:
-							current = FORWARD;
-							break;
-						} else if ((current = getchar()) >= '0' && current <= '6')
-							current = getchar();
-					}
-					switch (current) {
-					case UP:
-					case DOWN:
-						if (!gethistory(current == UP, c->buffer)) break;
+				newline();
+				prompt();
 
-						oldcursor = cursor;
-						oldend = end;
-						end = cursor = start + strlen(start);
-						while (cursor < oldend) *cursor++ = ' ';
-						cursor = oldcursor;
+				end = cursor = start;
+				*start = '\0';
 
-						while (cursor != start) moveleft();
-						while (cursor < end || cursor < oldend) moveright();
-						while (cursor != end) moveleft();
+				addhistory(NULL);
+			}
+			break;
+		case CLEAR:
+			oldcursor = cursor;
+			cursor = start;
 
-						*end = '\0';
+			fputs("\033[H\033[J", stdout);
+			prompt();
+			while (cursor != end) moveright();
+			while (cursor != oldcursor) moveleft();
 
-						break;
+			break;
+
+			/* This is a very minimal way to handle arrow keys. All modifiers except for
+			 * the ALT key are processed but ignored.
+			 *
+			 * See "Terminal Input Sequences" reference in `README.md'. */
+		case ESCAPE:
+			if ((current = getchar()) == '[') {
+				while ((current = getchar()) >= '0' && current <= '9');
+				if (current == ';') {
+					if ((current = getchar()) == ALT) switch ((current = getchar())) {
 					case LEFT:
-						if (cursor > start) moveleft();
+						current = BACKWARD;
 						break;
 					case RIGHT:
-						if (cursor < end) moveright();
+						current = FORWARD;
 						break;
-					}
+					} else if ((current = getchar()) >= '0' && current <= '6')
+						current = getchar();
 				}
 				switch (current) {
-				case FORWARD:
-					while (cursor != end && *cursor != ' ') moveright();
-					while (cursor != end && *cursor == ' ') moveright();
+				case UP:
+				case DOWN:
+					if (!gethistory(current == UP, c->buffer)) break;
+
+					oldcursor = cursor;
+					oldend = end;
+					end = cursor = start + strlen(start);
+					while (cursor < oldend) *cursor++ = ' ';
+					cursor = oldcursor;
+
+					while (cursor != start) moveleft();
+					while (cursor < end || cursor < oldend) moveright();
+					while (cursor != end) moveleft();
+
+					*end = '\0';
+
 					break;
-				case BACKWARD:
-					while (cursor != start && *(cursor - 1) == ' ') moveleft();
-					while (cursor != start && *(cursor - 1) != ' ') moveleft();
+				case LEFT:
+					if (cursor > start) moveleft();
+					break;
+				case RIGHT:
+					if (cursor < end) moveright();
 					break;
 				}
+			}
+			switch (current) {
+			case FORWARD:
+				while (cursor != end && *cursor != ' ') moveright();
+				while (cursor != end && *cursor == ' ') moveright();
 				break;
-			case DEL:
-				if (cursor == start) break;
-				memmove(oldcursor = cursor - 1, cursor, end - cursor);
-				*(end - 1) = ' ';
-
-				moveleft();
-				while (cursor != end) moveright();
-				while (cursor != oldcursor) moveleft();
-
-				*--end = '\0';
-
+			case BACKWARD:
+				while (cursor != start && *(cursor - 1) == ' ') moveleft();
+				while (cursor != start && *(cursor - 1) != ' ') moveleft();
 				break;
 			}
+			break;
+		case DEL:
+			if (cursor == start) break;
+			memmove(oldcursor = cursor - 1, cursor, end - cursor);
+			*(end - 1) = ' ';
+
+			moveleft();
+			while (cursor != end) moveright();
+			while (cursor != oldcursor) moveleft();
+
+			*--end = '\0';
+
+			break;
 		}
 		newline();
 	}
