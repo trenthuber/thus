@@ -96,6 +96,7 @@ int runfg(pid_t id) {
 			exit(EXIT_SUCCESS);
 		}
 		if (sigint) sigint = 0;
+		if (sigwinch) sigwinch = 0;
 	}
 	setsig(SIGCHLD, &defaultaction);
 	fgjob.done = errno = 0;
@@ -121,10 +122,6 @@ int runfg(pid_t id) {
 	} else status = WTERMSIG(fgjob.status);
 
 	return 1;
-}
-
-void deinitfg(void) {
-	setconfig(&canonical);
 }
 
 int fg(char **args, size_t numargs) {

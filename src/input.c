@@ -32,15 +32,15 @@ int stringinput(struct context *c) {
 	end = c->string;
 	while (*end && *end != '\n') ++end;
 	l = end - c->string;
-	while (*end == '\n') ++end; /* `scriptinput()' uses `stringinput()' */
+	while (*end == '\n') ++end;
 	if (l > MAXCHARS) {
 		note("Line too long, exceeds %d character limit", MAXCHARS);
 		return 0;
 	}
 
 	strncpy(c->buffer, c->string, l);
-	c->buffer[l] = ';';
-	c->buffer[l + 1] = '\0';
+	c->buffer[l++] = ';';
+	c->buffer[l] = '\0';
 	c->string = end;
 
 	return 1;

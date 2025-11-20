@@ -21,8 +21,7 @@ int main(void) {
 	if (!(dir = opendir("./")))
 		err(EXIT_FAILURE, "Unable to open current directory");
 
-	dprintf(listfd, "#include <stddef.h>\n\n#include \"builtin.h\"\n"
-	        "#include \"list.h\"\n\n");
+	dprintf(listfd, "#include <stddef.h>\n\n#include \"builtin.h\"\n\n");
 
 	src = srcs;
 	errno = 0;

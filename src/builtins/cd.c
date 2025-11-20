@@ -20,8 +20,8 @@ int cd(char **args, size_t numargs) {
 			return EXIT_FAILURE;
 		}
 		l = strlen(buffer);
-		buffer[l + 1] = '\0';
-		buffer[l] = '/';
+		buffer[l++] = '/';
+		buffer[l] = '\0';
 		break;
 	default:
 		return usage(args[0], "[directory]");

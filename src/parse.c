@@ -129,16 +129,16 @@ int parse(struct context *c) {
 	case '\\':
 		if (!quote) break;
 		switch (*(c->b + 1)) {
+		default:
+			memmove(c->b, c->b + 1, end-- - c->b);
+			--c->b;
+			*(c->b + 1) = *c->b;
 		case '$':
 		case '~':
 		case '"':
 		case '\\':
-			break;
-		default:
-			memmove(c->b, c->b + 1, end-- - c->b--);
-			*(c->b + 1) = *c->b;
+			memmove(c->b, c->b + 1, end-- - c->b);
 		}
-		memmove(c->b, c->b + 1, end-- - c->b);
 		break;
 	case '*':
 	case '?':

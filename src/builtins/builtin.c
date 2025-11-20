@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "builtin.h"
-#include "list.h"
 #include "utils.h"
 
 int (*getbuiltin(char *name))(char **args, size_t numargs) {

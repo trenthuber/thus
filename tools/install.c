@@ -23,13 +23,12 @@ int main(int argc, char **argv) {
 
 	strcat(path, "bin/");
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
-	else if (cpid == 0)
-		run("/bin/mkdir", LIST("mkdir", "-p", path), "create", path);
+	if (!cpid) run("/bin/mkdir", LIST("mkdir", "-p", path), "create", path);
 	await(cpid, "create", path);
 
 	strcat(path, "thus");
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
-	else if (cpid == 0)
+	if (!cpid)
 		run("/bin/cp", LIST("cp", "-f", "bin/thus", path), "copy", "bin/thus");
 	await(cpid, "copy", "bin/thus");
 

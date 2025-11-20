@@ -38,12 +38,11 @@ char **parsealias(char *value) {
 
 	if (!value) return NULL;
 
+	c = (struct context){.b = c.buffer, .alias = 1};
 	strcpy(c.buffer, value);
-	l = strlen(value);
-	c.buffer[l + 1] = '\0';
-	c.buffer[l] = ';';
-	c.b = c.buffer;
-	c.alias = 1;
+	l = strlen(c.buffer);
+	c.buffer[l++] = ';';
+	c.buffer[l] = '\0';
 
 	if (!parse(&c)) return NULL;
 

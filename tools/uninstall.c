@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
 	if (argc != 1) err(EXIT_FAILURE, "usage: %s\n", argv[0]);
 
 	if ((cpid = fork()) == -1) err(EXIT_FAILURE, "Unable to fork");
-	else if (cpid == 0)
+	if (!cpid)
 		run("/bin/rm", LIST("rm", STR(PATH), "uninstall"), "remove", STR(PATH));
 	await(cpid, "remove", STR(PATH));
 

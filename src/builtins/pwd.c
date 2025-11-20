@@ -18,10 +18,9 @@ int pwd(char **args, size_t numargs) {
 			note("Unable to get current working directory");
 			return EXIT_FAILURE;
 		}
-		l = strlen(buffer);
-		if (buffer[l - 1] != '/') {
-			buffer[l] = '/';
-			buffer[l + 1] = '\0';
+		if (buffer[(l = strlen(buffer)) - 1] != '/') {
+			buffer[l++] = '/';
+			buffer[l] = '\0';
 		}
 		if (setenv("PWD", buffer, 1) == -1) {
 			note("Unable to set $PWD$");
