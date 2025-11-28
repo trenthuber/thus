@@ -109,6 +109,7 @@ char *quoted(char *token) {
 		DOUBLE,
 		SINGLE,
 		ESCAPEDOUBLE,
+		ANY,
 	} degree;
 	static char buffer[MAXCHARS + 1];
 
@@ -128,17 +129,18 @@ char *quoted(char *token) {
 	case '|':
 	case ';':
 	case ' ':
-		if (degree < DOUBLE) degree = DOUBLE;
+		degree |= ANY;
 		break;
 	case '$':
 	case '~':
 	case '"':
-		if (degree < SINGLE) degree = SINGLE;
+		degree |= SINGLE;
 		break;
 	case '\'':
-		if (degree == NONE || degree == SINGLE) ++degree;
+		degree |= DOUBLE;
 	}
 	if (degree == NONE) return token;
+	degree = degree == ANY ? DOUBLE : degree & ~ANY;
 
 	quote = degree == SINGLE ? '\'' : '"';
 	p = buffer;
