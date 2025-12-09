@@ -30,12 +30,13 @@ static int closepipe(struct command command) {
 }
 
 static void redirectfiles(struct redirect *r) {
-	int access, fd;
+	int access;
 
 	for (; r->mode; ++r) {
 		if (r->oldname) {
 			switch (r->mode) {
 			case READ:
+			default:
 				access = O_RDONLY;
 				break;
 			case WRITE:
@@ -46,12 +47,9 @@ static void redirectfiles(struct redirect *r) {
 				break;
 			case APPEND:
 				access = O_WRONLY | O_CREAT | O_APPEND;
-			default:
-				break;
 			}
-			if ((fd = open(r->oldname, access, 0644)) == -1)
+			if ((r->oldfd = open(r->oldname, access, 0644)) == -1)
 				fatal("Unable to open `%s'", r->oldname);
-			r->oldfd = fd;
 		}
 		if (dup2(r->oldfd, r->newfd) == -1)
 			fatal("Unable to redirect file descriptor %d to %d", r->newfd, r->oldfd);

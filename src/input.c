@@ -114,6 +114,7 @@ static void newline(void) {
 	if (OFFSET(cursor) > OFFSET(end)) putchar('\n');
 	if (OFFSET(end)) putchar('\n');
 	putchar('\r');
+	fflush(stdout);
 }
 
 void getcolumns(void) {
