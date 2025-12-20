@@ -46,9 +46,8 @@ char *getpath(char *file) {
 		if (errno != ENOENT) note("Unable to expand `%s'", file); else errno = 0;
 		return NULL;
 	}
-	if (exists(path)) return path;
 
-	return NULL;
+	return exists(path) ? path : NULL;
 }
 
 int which(char **args, size_t numargs) {

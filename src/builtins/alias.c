@@ -29,6 +29,7 @@ char *getalias(char *name) {
 	size_t i;
 
 	if ((i = getindex(name)) == aliases.size) return NULL;
+
 	return aliases.entries[i].value;
 }
 
@@ -54,7 +55,8 @@ int removealias(char *name) {
 	struct entry *entry;
 
 	if ((i = getindex(name)) == aliases.size) return 0;
-	entry = &aliases.entries[i];
+
+	entry = aliases.entries + i;
 	memmove(entry, entry + 1, (--aliases.size - i) * sizeof*entry);
 	for (; i < aliases.size; ++i, ++entry)
 		entry->value = (void *)entry->value - sizeof*entry;
@@ -87,7 +89,7 @@ int alias(char **args, size_t numargs) {
 			*end = '\0';
 		}
 
-		entry = &aliases.entries[i = getindex(args[1])];
+		entry = aliases.entries + (i = getindex(args[1]));
 		if (i == aliases.size) {
 			strcpy(entry->name, args[1]);
 			++aliases.size;

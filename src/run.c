@@ -92,7 +92,7 @@ int run(struct context *c) {
 			putchar('&');
 		default:
 			putchar('\n');
-		}	
+		}
 	}
 
 	islist = c->previous.term > BG || c->current.term > BG;
@@ -167,7 +167,7 @@ int run(struct context *c) {
 			return quit(c);
 		}
 		jobid = pipeid;
-	} else if (!c->r && (c->current.builtin = getbuiltin(c->current.name))) {
+	} else if (c->current.builtin && !c->r) {
 		status = c->current.builtin(c->tokens, c->numtokens);
 		cpid = 0;
 	} else if ((jobid = cpid = fork()) == -1) {

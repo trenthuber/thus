@@ -18,6 +18,5 @@ int usage(char *program, char *options) {
 	fprintf(stderr, "usage: %s", program);
 	if (options) fprintf(stderr, " %s", options);
 	fputc('\n', stderr);
-
 	return EXIT_FAILURE;
 }

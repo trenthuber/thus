@@ -28,7 +28,7 @@ int exec(char **args, size_t numargs) {
 	if (numargs < 2) return usage(args[0], "command [args ...]");
 
 	clear(&c);
-	memcpy(c.tokens, &args[1], (numargs - 1) * sizeof*args);
+	memcpy(c.tokens, args + 1, (numargs - 1) * sizeof*args);
 	strcpy(c.current.name, args[1]);
 	if (!(c.current.builtin = getbuiltin(args[1]))
 	    && !(c.current.path = getpath(c.current.name))) {
@@ -40,5 +40,5 @@ int exec(char **args, size_t numargs) {
 
 	/* execute() is guaranteed not to return, this statement just appeases the
 	 * compiler */
-	exit(EXIT_SUCCESS);
+	exit(EXIT_FAILURE);
 }

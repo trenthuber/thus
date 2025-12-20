@@ -15,6 +15,5 @@ int set(char **args, size_t numargs) {
 	default:
 		return usage(args[0], "name [value]");
 	}
-
 	return EXIT_SUCCESS;
 }

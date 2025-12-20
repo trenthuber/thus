@@ -73,8 +73,8 @@ void init(void) {
 		note("Unable to append trailing slash to $PWD$");
 
 	if (shlvl == 1
-	    && setenv("PATH", "/usr/local/bin/:/usr/local/sbin/:"
-	                      "/usr/bin/:/usr/sbin/:/bin/:/sbin/", 1) == -1)
+	    && setenv("PATH", "/usr/local/bin/:/usr/local/sbin/"
+	                      ":/usr/bin/:/usr/sbin/:/bin/:/sbin/", 1) == -1)
 		note("Unable to initialize $PATH$");
 
 	getcolumns();
@@ -113,7 +113,7 @@ char *quoted(char *token) {
 	} degree;
 	static char buffer[MAXCHARS + 1];
 
-	if (!*token) return "\"\"";
+	if (!token[0]) return "\"\"";
 
 	degree = NONE;
 	for (p = token; *p; ++p) switch(*p) {

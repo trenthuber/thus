@@ -62,7 +62,7 @@ void initbg(void) {
 	bgaction = (struct sigaction){.sa_handler = sigchldbghandler};
 
 	for (i = 0; i < MAXBG - 1; ++i)
-		bgjobs.entries[i].next = &bgjobs.entries[i + 1];
+		bgjobs.entries[i].next = bgjobs.entries + i + 1;
 	bgjobs.free = bgjobs.entries;
 }
 
@@ -89,7 +89,6 @@ int pushbgid(pid_t id) {
 
 int peekbg(struct bgjob *job) {
 	if (bgjobs.active && job) *job = bgjobs.active->job;
-
 	return bgjobs.active != NULL;
 }
 

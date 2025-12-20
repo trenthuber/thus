@@ -18,6 +18,5 @@ int mode(char **args, size_t numargs) {
 		default:
 			return usage(args[0], "[verbose | quiet]");
 	}
-
 	return EXIT_SUCCESS;
 }
