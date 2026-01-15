@@ -146,16 +146,16 @@ int userinput(struct context *c) {
 		prompt();
 		while ((current = getchar()) != '\n') switch (current) {
 		default:
-			if (current >= ' ' && current <= '~') {
-				if (end - start == MAXCHARS) break;
-				memmove(cursor + 1, cursor, end - cursor);
-				*cursor = current;
-				*++end = '\0';
+			if (current < ' ' || current > '~' || end - start == MAXCHARS) break;
 
-				oldcursor = cursor + 1;
-				while (cursor != end) moveright();
-				while (cursor != oldcursor) moveleft();
-			}
+			memmove(cursor + 1, cursor, end - cursor);
+			*cursor = current;
+			*++end = '\0';
+
+			oldcursor = cursor + 1;
+			while (cursor != end) moveright();
+			while (cursor != oldcursor) moveleft();
+
 			break;
 		case EOF:
 			if (sigwinch) {
@@ -205,7 +205,6 @@ int userinput(struct context *c) {
 						break;
 					case RIGHT:
 						current = FORWARD;
-						break;
 					} else if ((current = getchar()) >= '0' && current <= '6')
 						current = getchar();
 				}
@@ -232,7 +231,6 @@ int userinput(struct context *c) {
 					break;
 				case RIGHT:
 					if (cursor < end) moveright();
-					break;
 				}
 			}
 			switch (current) {
@@ -243,11 +241,11 @@ int userinput(struct context *c) {
 			case BACKWARD:
 				while (cursor != start && *(cursor - 1) == ' ') moveleft();
 				while (cursor != start && *(cursor - 1) != ' ') moveleft();
-				break;
 			}
 			break;
 		case DEL:
 			if (cursor == start) break;
+
 			memmove(oldcursor = cursor - 1, cursor, end - cursor);
 			*(end - 1) = ' ';
 
@@ -256,8 +254,6 @@ int userinput(struct context *c) {
 			while (cursor != oldcursor) moveleft();
 
 			*--end = '\0';
-
-			break;
 		}
 		newline();
 	}
