@@ -124,16 +124,16 @@ void getcolumns(void) {
 
 int userinput(struct context *c) {
 	enum {
-		CTRLD = '\004',
-		CLEAR = '\014',
-		ESCAPE = '\033',
+		EOT = '\004',
+		FF = '\014',
+		ESC = '\033',
 		ALT = '2' + 1,
 		UP = 'A',
 		DOWN,
 		RIGHT,
 		LEFT,
-		FORWARD = 'f',
 		BACKWARD = 'b',
+		FORWARD = 'f',
 		DEL = '\177',
 	};
 
@@ -164,7 +164,7 @@ int userinput(struct context *c) {
 				getcolumns();
 			}
 			if (sigquit) {
-			case CTRLD:
+			case EOT:
 				newline();
 				return 0;
 			}
@@ -180,7 +180,7 @@ int userinput(struct context *c) {
 				addhistory(NULL);
 			}
 			break;
-		case CLEAR:
+		case FF:
 			oldcursor = cursor;
 			cursor = start;
 
@@ -194,8 +194,9 @@ int userinput(struct context *c) {
 			/* This is a very minimal way to handle arrow keys. All modifiers except for
 			 * the ALT key are processed but ignored.
 			 *
-			 * See "Terminal Input Sequences" reference in `README.md'. */
-		case ESCAPE:
+			 * See "Terminal Input Sequences" reference in `README.md'; some parts don't
+			 * seem entirely accurate, but the table of modifier values was helpful. */
+		case ESC:
 			if ((current = getchar()) == '[') {
 				while ((current = getchar()) >= '0' && current <= '9');
 				if (current == ';') {
@@ -234,13 +235,13 @@ int userinput(struct context *c) {
 				}
 			}
 			switch (current) {
-			case FORWARD:
-				while (cursor != end && *cursor != ' ') moveright();
-				while (cursor != end && *cursor == ' ') moveright();
-				break;
 			case BACKWARD:
 				while (cursor != start && *(cursor - 1) == ' ') moveleft();
 				while (cursor != start && *(cursor - 1) != ' ') moveleft();
+				break;
+			case FORWARD:
+				while (cursor != end && *cursor != ' ') moveright();
+				while (cursor != end && *cursor == ' ') moveright();
 			}
 			break;
 		case DEL:
